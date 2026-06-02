@@ -4,6 +4,7 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import html
 import json
 import os
 import threading
@@ -81,11 +82,24 @@ class ManagedPosition:
     stop: Decimal
     take_profit: Decimal
     atr: Decimal
+    ct_val: Decimal
     initial_risk: Decimal
     opened_at: float
     break_even_done: bool = False
     trailing_active: bool = False
     best_price: Decimal = Decimal("0")
+    last_price: Decimal = Decimal("0")
+
+
+@dataclass
+class TradeRecord:
+    inst_id: str
+    side: Side
+    entry: Decimal
+    exit_price: Decimal
+    pnl: Decimal
+    reason: str
+    closed_at: str
 
 
 class OKXClient:
@@ -303,6 +317,7 @@ class BotRuntime:
         self.config = BotConfig()
         self.log: list[str] = []
         self.positions: dict[str, ManagedPosition] = {}
+        self.closed_trades: list[TradeRecord] = []
         self.cooldowns: dict[str, float] = {}
         self.derivatives_cache: dict[str, tuple[float, Decimal | None, Decimal | None]] = {}
         self.running = False
@@ -313,38 +328,130 @@ class BotRuntime:
 
     def start(self) -> str:
         if self.running:
-            return "Bot ya está activo."
+            return self.dashboard_html()
         missing = self._missing_secrets()
         if missing:
-            return f"Faltan secretos: {', '.join(missing)}"
+            self._log(f"Faltan secretos: {', '.join(missing)}")
+            return self.dashboard_html()
         self.running = True
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
         self._log("Bot iniciado en OKX demo.")
-        return "Bot iniciado en OKX demo."
+        return self.dashboard_html()
 
     def stop(self) -> str:
         self.running = False
         self._log("Bot detenido por control manual.")
-        return "Bot detenido. Las posiciones demo abiertas deben revisarse en OKX."
+        return self.dashboard_html()
 
-    def status_markdown(self) -> str:
+    def dashboard_html(self) -> str:
         with self._lock:
-            pos_lines = [
-                f"- `{p.inst_id}` {p.side} size={p.size} entry={p.entry} stop={p.stop} tp={p.take_profit} trailing={p.trailing_active}"
-                for p in self.positions.values()
-            ]
-            logs = "\n".join(f"- {line}" for line in self.log[-18:])
-        return (
-            f"### Estado\n"
-            f"- Activo: `{self.running}`\n"
-            f"- Modo demo: `{self.config.simulated}`\n"
-            f"- Último escaneo: `{self.last_scan}`\n"
-            f"- Error reciente: `{self.last_error or 'ninguno'}`\n"
-            f"- Posiciones gestionadas: `{len(self.positions)}/{self.config.max_concurrent_positions}`\n\n"
-            f"### Posiciones\n{chr(10).join(pos_lines) if pos_lines else '- ninguna'}\n\n"
-            f"### Registro\n{logs if logs else '- sin eventos todavía'}"
+            positions = list(self.positions.values())
+            closed = list(self.closed_trades[-8:])
+            logs = list(self.log[-16:])
+            last_error = self.last_error
+            last_scan = self.last_scan
+
+        total_unrealized = sum((_position_pnl(p) for p in positions), Decimal("0"))
+        total_closed = sum((t.pnl for t in self.closed_trades), Decimal("0"))
+        total_pnl = total_unrealized + total_closed
+        wins = [t for t in self.closed_trades if t.pnl > 0]
+        losses = [t for t in self.closed_trades if t.pnl < 0]
+        win_rate = (len(wins) / len(self.closed_trades) * 100) if self.closed_trades else 0
+        gross_win = sum((t.pnl for t in wins), Decimal("0"))
+        gross_loss = abs(sum((t.pnl for t in losses), Decimal("0")))
+        profit_factor = (gross_win / gross_loss) if gross_loss > 0 else Decimal("0")
+        best_trade = max((t.pnl for t in self.closed_trades), default=Decimal("0"))
+        worst_trade = min((t.pnl for t in self.closed_trades), default=Decimal("0"))
+        bias = _market_bias(positions)
+        active_badge = "ESCANER ACTIVO" if self.running else "ESCANER DETENIDO"
+        status_class = "ok" if self.running else "warn"
+
+        position_rows = "".join(_position_row(p) for p in positions) or (
+            "<tr><td colspan='7' class='muted center'>Sin posiciones abiertas. El bot espera una señal de alta calidad.</td></tr>"
         )
+        trade_rows = "".join(_trade_card(t) for t in reversed(closed)) or (
+            "<div class='empty'>Sin cierres registrados desde este arranque.</div>"
+        )
+        terminal_lines = "".join(f"<div><span class='term-prefix'>[OKX]</span> {_esc(line)}</div>" for line in logs) or (
+            "<div><span class='term-prefix'>[SYSTEM]</span> Terminal listo.</div>"
+        )
+
+        return f"""
+<div class="terminal-shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="bolt">OK</div>
+      <div>
+        <div class="brand-name">OKX QUANT TERMINAL</div>
+        <div class="badges"><span>ELITE V3.0</span><span>DEMO EXCHANGE</span><span>USDT-SWAP</span></div>
+      </div>
+    </div>
+    <div class="status-pill {status_class}">{active_badge}</div>
+  </div>
+
+  <div class="grid hero-grid">
+    <section class="card balance-card">
+      <div class="label">CAPITAL OPERATIVO DEMO</div>
+      <div class="big">{_fmt_money(self.config.order_margin_usdt * self.config.leverage * self.config.max_concurrent_positions)} USDT</div>
+      <div class="sub">Margen por trade {_fmt_money(self.config.order_margin_usdt)} USDT | Notional {_fmt_money(self.config.order_margin_usdt * self.config.leverage)} USDT</div>
+      <div class="mini {'pos' if total_pnl >= 0 else 'neg'}">PNL sistema {_fmt_money(total_pnl)} USDT</div>
+    </section>
+    <section class="card bias-card">
+      <div class="label">SESGO OPERATIVO</div>
+      <div class="trend">{bias}</div>
+      <div class="sub">Filtro: Adaptive Donchian Momentum | Confirmacion: 5m / 15m</div>
+    </section>
+    <section class="card strategy-card">
+      <div class="label">ESTRATEGIA OKX ADAPTIVE DONCHIAN V3.0</div>
+      <div class="kv"><span>APALANCAMIENTO</span><b>{self.config.leverage}X</b></div>
+      <div class="kv"><span>MONTO</span><b>{_fmt_money(self.config.order_margin_usdt)} USDT</b></div>
+      <div class="kv"><span>EJECUCION</span><b>{int(self.config.poll_seconds)} SEGUNDOS</b></div>
+      <div class="kv"><span>UNIVERSO</span><b>TOP {self.config.top_symbols} OKX SWAPS</b></div>
+      <div class="kv"><span>STOP / TP</span><b>{self.config.atr_stop_mult} ATR / {self.config.reward_risk}R</b></div>
+      <div class="kv"><span>PROTECCION</span><b>BE 40% / TS 70%</b></div>
+    </section>
+  </div>
+
+  <div class="grid stat-grid">
+    <section class="stat-card"><div>PNL VIVO</div><strong class="{_pnl_class(total_unrealized)}">{_fmt_money(total_unrealized)}</strong><small>Posiciones {len(positions)} / {self.config.max_concurrent_positions}</small></section>
+    <section class="stat-card accent-a"><div>PNL CERRADO</div><strong class="{_pnl_class(total_closed)}">{_fmt_money(total_closed)}</strong><small>Trades {len(self.closed_trades)}</small></section>
+    <section class="stat-card accent-b"><div>ULTIMO ESCANEO</div><strong>{_esc(last_scan)}</strong><small>Error: {_esc(last_error or "ninguno")}</small></section>
+    <section class="stat-card accent-c"><div>RIESGO</div><strong>{_fmt_money(self.config.daily_loss_stop_usdt)}</strong><small>Stop diario teorico USDT</small></section>
+  </div>
+
+  <div class="grid main-grid">
+    <section class="card positions-card">
+      <div class="section-head"><span>MONITOR DE POSICIONES ACTIVAS</span><b>{len(positions)} ACTIVAS</b></div>
+      <table>
+        <thead><tr><th>SIMBOLO</th><th>DIRECCION</th><th>ENTRADA</th><th>PRECIO</th><th>STOP</th><th>PNL VIVO</th><th>ESTATUS</th></tr></thead>
+        <tbody>{position_rows}</tbody>
+      </table>
+    </section>
+    <section class="card performance-card">
+      <div class="section-head"><span>RENDIMIENTO GLOBAL</span></div>
+      <div class="bar"><span style="width:{min(max(win_rate, 3), 100):.1f}%"></span></div>
+      <div class="perf-grid">
+        <div><small>WIN RATE</small><strong>{win_rate:.1f}%</strong></div>
+        <div><small>PROFIT FACTOR</small><strong>{profit_factor:.2f}</strong></div>
+        <div><small>MEJOR TRADE</small><strong class="{_pnl_class(best_trade)}">{_fmt_money(best_trade)}</strong></div>
+        <div><small>PEOR TRADE</small><strong class="{_pnl_class(worst_trade)}">{_fmt_money(worst_trade)}</strong></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="grid lower-grid">
+    <section class="card history-card">
+      <div class="section-head"><span>HISTORIAL DE TRADES</span></div>
+      <div class="trade-list">{trade_rows}</div>
+    </section>
+    <section class="card terminal-card">
+      <div class="section-head"><span>TERMINAL DE EJECUCION OKX</span></div>
+      <div class="terminal">{terminal_lines}</div>
+    </section>
+  </div>
+</div>
+"""
 
     def _run_loop(self) -> None:
         asyncio.run(self._main())
@@ -435,9 +542,11 @@ class BotRuntime:
             stop=stop,
             take_profit=take_profit,
             atr=signal.atr,
+            ct_val=instrument.ct_val,
             initial_risk=risk,
             opened_at=time.time(),
             best_price=signal.price,
+            last_price=signal.price,
         )
         self._log(f"Apertura {signal.side} {signal.inst_id}: {signal.reason}, entry={signal.price}, stop={stop}, tp={take_profit}")
 
@@ -449,6 +558,7 @@ class BotRuntime:
             price = Decimal(str(ticker.get("last", "0")))
             if price <= 0:
                 continue
+            pos.last_price = price
             await self._manage_single_position(client, pos, price)
 
     async def _manage_single_position(self, client: OKXClient, pos: ManagedPosition, price: Decimal) -> None:
@@ -481,6 +591,18 @@ class BotRuntime:
         if hit_stop or hit_tp:
             await client.close_position(pos.inst_id, pos.side)
             outcome = "stop/trailing" if hit_stop else "take-profit"
+            self.closed_trades.append(
+                TradeRecord(
+                    inst_id=pos.inst_id,
+                    side=pos.side,
+                    entry=pos.entry,
+                    exit_price=price,
+                    pnl=_position_pnl(pos, price),
+                    reason=outcome,
+                    closed_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                )
+            )
+            self.closed_trades = self.closed_trades[-100:]
             self._log(f"Cierre {outcome} {pos.side} {pos.inst_id} a precio aprox {price}")
             self.cooldowns[pos.inst_id] = time.time() + self.config.cooldown_minutes * 60
             self.positions.pop(pos.inst_id, None)
@@ -559,6 +681,72 @@ def _spread_bps(ticker: dict[str, Any]) -> Decimal | None:
     return ((ask - bid) / mid) * Decimal("10000")
 
 
+def _position_pnl(position: ManagedPosition, price: Decimal | None = None) -> Decimal:
+    mark = price if price is not None and price > 0 else position.last_price
+    if mark <= 0:
+        return Decimal("0")
+    raw = (mark - position.entry) * position.size * position.ct_val
+    return raw if position.side == "long" else -raw
+
+
+def _position_row(position: ManagedPosition) -> str:
+    pnl = _position_pnl(position)
+    status = "TRAILING" if position.trailing_active else "LIVE MONITOR"
+    side_class = "pos" if position.side == "long" else "neg"
+    return f"""
+<tr>
+  <td>{_esc(position.inst_id.replace("-USDT-SWAP", "USDT"))}</td>
+  <td class="{side_class}">{position.side.upper()}</td>
+  <td>{_fmt_decimal(position.entry)}</td>
+  <td>{_fmt_decimal(position.last_price)}</td>
+  <td>{_fmt_decimal(position.stop)}</td>
+  <td class="{_pnl_class(pnl)}">{_fmt_money(pnl)}</td>
+  <td><span class="tag">{status}</span></td>
+</tr>
+"""
+
+
+def _trade_card(trade: TradeRecord) -> str:
+    side_class = "pos" if trade.side == "long" else "neg"
+    return f"""
+<div class="trade-card">
+  <div class="coin">{_esc(trade.inst_id.split("-")[0][:2])}</div>
+  <div>
+    <strong>{_esc(trade.inst_id.replace("-USDT-SWAP", "USDT"))} <span class="{side_class}">{trade.side.upper()}</span></strong>
+    <small>E {_fmt_decimal(trade.entry)} | S {_fmt_decimal(trade.exit_price)}</small>
+  </div>
+  <div>
+    <small>CAUSA DE CIERRE</small>
+    <strong>{_esc(trade.reason.upper())}</strong>
+  </div>
+  <b class="{_pnl_class(trade.pnl)}">{_fmt_money(trade.pnl)}</b>
+</div>
+"""
+
+
+def _market_bias(positions: list[ManagedPosition]) -> str:
+    longs = sum(1 for item in positions if item.side == "long")
+    shorts = sum(1 for item in positions if item.side == "short")
+    if longs > shorts:
+        return "LARGO"
+    if shorts > longs:
+        return "CORTO"
+    return "NEUTRAL"
+
+
+def _pnl_class(value: Decimal) -> str:
+    return "pos" if value >= 0 else "neg"
+
+
+def _fmt_money(value: Decimal) -> str:
+    sign = "+" if value > 0 else ""
+    return f"{sign}{value.quantize(Decimal('0.01'))}"
+
+
+def _esc(value: object) -> str:
+    return html.escape(str(value))
+
+
 def _is_disallowed_symbol(inst_id: str) -> bool:
     base = inst_id.split("-")[0].upper()
     banned_exact = {"XAUT", "PAXG", "GLD", "SLV", "TSLA", "AAPL", "NVDA", "MSTR", "COIN", "AMZN", "GOOGL", "META", "MSFT"}
@@ -570,27 +758,139 @@ def _fmt_decimal(value: Decimal) -> str:
     return format(value.normalize(), "f")
 
 
+APP_CSS = """
+:root {
+  --bg: #050607;
+  --panel: #101216;
+  --panel-2: #0b0d10;
+  --line: #242832;
+  --text: #f5f8ff;
+  --muted: #8e96a6;
+  --cyan: #00e5ff;
+  --green: #00ff9d;
+  --red: #ff3b4f;
+  --violet: #8f5cff;
+  --gold: #ffd166;
+}
+body, .gradio-container {
+  background: radial-gradient(circle at 12% 0%, rgba(0, 229, 255, 0.08), transparent 30%), var(--bg) !important;
+  color: var(--text) !important;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+}
+.gradio-container { max-width: none !important; padding: 24px 28px !important; }
+footer, .api-docs, .built-with { display: none !important; }
+button.show-api { display: none !important; }
+.control-row { display: flex !important; justify-content: flex-end !important; gap: 12px !important; margin: 0 0 18px !important; }
+button {
+  border-radius: 8px !important;
+  border: 1px solid var(--line) !important;
+  background: #151820 !important;
+  color: var(--text) !important;
+  font-weight: 900 !important;
+  text-transform: uppercase;
+  letter-spacing: 0 !important;
+}
+.terminal-shell { width: 100%; }
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+.brand { display: flex; align-items: center; gap: 14px; }
+.bolt {
+  width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center;
+  background: linear-gradient(135deg, #2aa9ff, #00e5ff); color: white; font-weight: 950;
+  box-shadow: 0 0 26px rgba(0, 229, 255, 0.35);
+}
+.brand-name { font-size: 22px; font-weight: 950; color: var(--cyan); text-shadow: 0 0 22px rgba(0, 229, 255, 0.55); }
+.badges { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.badges span, .status-pill, .tag {
+  border: 1px solid rgba(0, 229, 255, 0.28); color: var(--cyan); background: rgba(0, 229, 255, 0.08);
+  border-radius: 999px; padding: 4px 8px; font-size: 10px; font-weight: 900;
+}
+.badges span:nth-child(2) { color: var(--gold); border-color: rgba(255, 209, 102, 0.35); background: rgba(255, 209, 102, 0.08); }
+.status-pill { padding: 10px 16px; }
+.status-pill.ok { color: var(--green); border-color: rgba(0,255,157,.35); background: rgba(0,255,157,.08); }
+.status-pill.warn { color: var(--red); border-color: rgba(255,59,79,.35); background: rgba(255,59,79,.08); }
+.grid { display: grid; gap: 18px; }
+.hero-grid { grid-template-columns: 1fr 1fr 1.05fr; }
+.stat-grid { grid-template-columns: repeat(4, 1fr); margin-top: 18px; }
+.main-grid { grid-template-columns: 2fr 1fr; margin-top: 18px; }
+.lower-grid { grid-template-columns: 1.25fr 1fr; margin-top: 18px; }
+.card, .stat-card {
+  background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.018)), var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 24px; box-shadow: 0 18px 44px rgba(0,0,0,.34);
+}
+.balance-card, .strategy-card, .bias-card { min-height: 170px; }
+.label, .section-head span, th, small { color: var(--text); font-size: 11px; font-weight: 950; letter-spacing: 0; }
+.big { font-size: 30px; font-weight: 950; margin-top: 42px; }
+.sub, .muted { color: var(--muted); font-size: 12px; font-weight: 750; margin-top: 8px; }
+.mini { margin-top: 18px; font-size: 12px; font-weight: 950; }
+.trend { color: var(--green); font-size: 38px; font-weight: 950; margin-top: 46px; }
+.kv { display: flex; justify-content: space-between; margin-top: 13px; font-size: 12px; font-weight: 900; }
+.kv b { color: var(--cyan); }
+.stat-card { min-height: 110px; }
+.stat-card div { font-size: 11px; font-weight: 950; margin-bottom: 14px; }
+.stat-card strong { display:block; font-size: 28px; font-weight: 950; }
+.stat-card small { color: var(--muted); display:block; margin-top: 8px; }
+.accent-a { border-color: rgba(143,92,255,.5); }
+.accent-b { border-color: rgba(0,229,255,.42); }
+.accent-c { border-color: rgba(255,255,255,.35); }
+.pos { color: var(--green) !important; }
+.neg { color: var(--red) !important; }
+.center { text-align: center; }
+.section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+.section-head b { color: var(--cyan); background: rgba(0,229,255,.1); padding: 5px 9px; border-radius: 999px; font-size: 10px; }
+table { width: 100%; border-collapse: collapse; overflow: hidden; }
+th, td { padding: 15px 12px; border-bottom: 1px solid rgba(255,255,255,.06); text-align:left; font-size: 12px; font-weight: 850; }
+thead { background: var(--panel-2); }
+.bar { height: 10px; background:#1b1f28; border-radius:999px; overflow:hidden; margin: 18px 0 24px; }
+.bar span { display:block; height:100%; background: linear-gradient(90deg, var(--green), var(--cyan)); }
+.perf-grid { display:grid; grid-template-columns:1fr 1fr; gap:22px 18px; }
+.perf-grid strong { display:block; font-size: 24px; margin-top: 6px; }
+.trade-list { display:flex; flex-direction:column; gap:12px; }
+.trade-card {
+  border: 1px solid var(--line); border-radius: 10px; padding: 14px; display:grid;
+  grid-template-columns: 42px 1.4fr 1fr auto; align-items:center; gap:14px; background:#0d0f13;
+}
+.coin { width:34px; height:34px; border-radius:6px; display:grid; place-items:center; background:#030405; color:var(--text); font-weight:950; }
+.trade-card small { color: var(--muted); display:block; margin-top:5px; }
+.terminal {
+  background:#030405; border-radius:10px; border:1px solid #151922; padding:16px; min-height:250px;
+  font-family: "Cascadia Mono", Consolas, monospace; color:#b9ffdf; font-size:11px; line-height:1.65; overflow:auto;
+}
+.term-prefix { color: var(--cyan); font-weight: 950; }
+.empty { color: var(--muted); border:1px dashed var(--line); border-radius:10px; padding:18px; font-size:12px; font-weight:800; }
+@media (max-width: 1100px) {
+  .hero-grid, .main-grid, .lower-grid { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 700px) {
+  .gradio-container { padding: 16px !important; }
+  .topbar, .control-row { align-items: stretch; flex-direction: column; }
+  .stat-grid { grid-template-columns: 1fr; }
+  .brand-name { font-size: 18px; }
+  .big, .trend { font-size: 26px; }
+  .trade-card { grid-template-columns: 1fr; }
+  table { min-width: 760px; }
+  .positions-card { overflow-x: auto; }
+}
+"""
+
+
 runtime = BotRuntime()
 if runtime.config.autostart:
     runtime.start()
 
 
-with gr.Blocks(title="OKX Demo Quant Bot") as demo:
-    gr.Markdown("# OKX Demo Quant Bot")
-    gr.Markdown(
-        "Modo demo para futuros perpetuos OKX. Estrategia: Adaptive Donchian Momentum con ATR, VWAP, ADX/DI, volumen, funding, open interest, tendencia 15m y control de exposición."
-    )
-    with gr.Row():
-        start_btn = gr.Button("Iniciar demo", variant="primary")
+with gr.Blocks(title="OKX Quant Terminal", css=APP_CSS) as demo:
+    with gr.Row(elem_classes=["control-row"]):
+        start_btn = gr.Button("Iniciar OKX demo", variant="primary")
         stop_btn = gr.Button("Detener")
         refresh_btn = gr.Button("Actualizar")
-    output = gr.Markdown(runtime.status_markdown)
-    start_btn.click(lambda: runtime.start(), outputs=output).then(lambda: runtime.status_markdown(), outputs=output)
-    stop_btn.click(lambda: runtime.stop(), outputs=output).then(lambda: runtime.status_markdown(), outputs=output)
-    refresh_btn.click(lambda: runtime.status_markdown(), outputs=output)
+    output = gr.HTML(runtime.dashboard_html())
+    start_btn.click(lambda: runtime.start(), outputs=output)
+    stop_btn.click(lambda: runtime.stop(), outputs=output)
+    refresh_btn.click(lambda: runtime.dashboard_html(), outputs=output)
     if hasattr(gr, "Timer"):
         timer = gr.Timer(10)
-        timer.tick(lambda: runtime.status_markdown(), outputs=output)
+        timer.tick(lambda: runtime.dashboard_html(), outputs=output)
 
 
 if __name__ == "__main__":

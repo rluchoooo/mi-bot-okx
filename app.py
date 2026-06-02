@@ -235,26 +235,45 @@ class StrategyEngine:
         if row.adx < self.config.min_adx or high_row.adx < self.config.min_adx - 2:
             return None
 
-        bandwidth_rank = _percentile_rank(frame["bb_width"].tail(80).to_numpy(), row.bb_width)
         volume_z = row.volume_z
-        was_ttm_squeeze = bool(prev.squeeze_on) or frame["squeeze_on"].tail(8).any()
-        squeeze_release = (was_ttm_squeeze and not bool(row.squeeze_on)) or (bandwidth_rank < 0.30 and row.bb_width > prev.bb_width)
-        if not squeeze_release or volume_z < 0.35:
+        if volume_z < 0.35:
             return None
 
         if funding_rate is not None and abs(funding_rate) > self.config.max_funding_abs:
             return None
 
-        high_trend_up = high_row.close > high_row.ema_50 and high_row.ema_20 > high_row.ema_50
-        high_trend_down = high_row.close < high_row.ema_50 and high_row.ema_20 < high_row.ema_50
+        high_trend_up = high_row.close > high_row.ema_100 and high_row.ema_20 > high_row.ema_50 > high_row.ema_100
+        high_trend_down = high_row.close < high_row.ema_100 and high_row.ema_20 < high_row.ema_50 < high_row.ema_100
         above_vwap = row.close > row.vwap
         below_vwap = row.close < row.vwap
 
-        long_breakout = prev.close <= prev.bb_upper and row.close > row.bb_upper and row.close > row.ema_20
-        short_breakout = prev.close >= prev.bb_lower and row.close < row.bb_lower and row.close < row.ema_20
+        range_width = Decimal(str(row.donchian_upper - row.donchian_lower))
+        if range_width < atr * Decimal("1.25"):
+            return None
 
-        long_momentum_ok = 50 <= row.rsi <= 72 and row.plus_di > row.minus_di and row.close > row.kc_upper
-        short_momentum_ok = 28 <= row.rsi <= 50 and row.minus_di > row.plus_di and row.close < row.kc_lower
+        atr_extension = abs(Decimal(str(row.close - row.vwap))) / atr
+        if atr_extension > Decimal("1.80"):
+            return None
+
+        long_breakout = prev.close <= prev.donchian_upper and row.close > row.donchian_upper and row.close > row.ema_20
+        short_breakout = prev.close >= prev.donchian_lower and row.close < row.donchian_lower and row.close < row.ema_20
+        long_pullback_continuation = (
+            row.low <= row.ema_20
+            and row.close > row.open
+            and row.close > row.donchian_mid
+            and row.close > prev.high
+            and row.plus_di > row.minus_di
+        )
+        short_pullback_continuation = (
+            row.high >= row.ema_20
+            and row.close < row.open
+            and row.close < row.donchian_mid
+            and row.close < prev.low
+            and row.minus_di > row.plus_di
+        )
+
+        long_momentum_ok = 52 <= row.rsi <= 76 and row.plus_di > row.minus_di and row.close > row.ema_50
+        short_momentum_ok = 24 <= row.rsi <= 48 and row.minus_di > row.plus_di and row.close < row.ema_50
 
         if funding_rate is not None:
             if funding_rate > self.config.avoid_one_way_funding:
@@ -264,14 +283,17 @@ class StrategyEngine:
 
         oi_bonus = 0.15 if open_interest is not None and open_interest > 0 else 0.0
         adx_bonus = min((row.adx - self.config.min_adx) / 20, 0.75)
-        compression_bonus = max(0.0, 0.30 - bandwidth_rank)
-        base_score = float(volume_z + compression_bonus + adx_bonus + min(float(atr_pct * 100), 2.0) + oi_bonus)
+        structure_bonus = min(float(range_width / atr) / 10, 0.50)
+        extension_penalty = float(atr_extension) * 0.20
+        base_score = float(volume_z + adx_bonus + structure_bonus + min(float(atr_pct * 100), 2.0) + oi_bonus - extension_penalty)
 
-        if long_breakout and high_trend_up and above_vwap and long_momentum_ok:
-            reason = "TTM squeeze breakout + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
+        if (long_breakout or long_pullback_continuation) and high_trend_up and above_vwap and long_momentum_ok:
+            setup = "Donchian breakout" if long_breakout else "EMA pullback continuation"
+            reason = f"{setup} + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
             return Signal(inst_id, "long", close, atr, base_score, reason)
-        if short_breakout and high_trend_down and below_vwap and short_momentum_ok:
-            reason = "TTM squeeze breakdown + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
+        if (short_breakout or short_pullback_continuation) and high_trend_down and below_vwap and short_momentum_ok:
+            setup = "Donchian breakdown" if short_breakout else "EMA pullback continuation"
+            reason = f"{setup} + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
             return Signal(inst_id, "short", close, atr, base_score, reason)
         return None
 
@@ -482,11 +504,10 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     out["ema_20"] = out["close"].ewm(span=20, adjust=False).mean()
     out["ema_50"] = out["close"].ewm(span=50, adjust=False).mean()
-    out["bb_mid"] = out["close"].rolling(20).mean()
-    std = out["close"].rolling(20).std(ddof=0)
-    out["bb_upper"] = out["bb_mid"] + 2 * std
-    out["bb_lower"] = out["bb_mid"] - 2 * std
-    out["bb_width"] = (out["bb_upper"] - out["bb_lower"]) / out["bb_mid"]
+    out["ema_100"] = out["close"].ewm(span=100, adjust=False).mean()
+    out["donchian_upper"] = out["high"].rolling(20).max().shift(1)
+    out["donchian_lower"] = out["low"].rolling(20).min().shift(1)
+    out["donchian_mid"] = (out["donchian_upper"] + out["donchian_lower"]) / 2
     prev_close = out["close"].shift(1)
     tr = pd.concat(
         [
@@ -497,10 +518,6 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     ).max(axis=1)
     out["atr"] = tr.ewm(alpha=1 / 14, adjust=False).mean()
-    out["kc_mid"] = out["ema_20"]
-    out["kc_upper"] = out["kc_mid"] + 1.5 * out["atr"]
-    out["kc_lower"] = out["kc_mid"] - 1.5 * out["atr"]
-    out["squeeze_on"] = (out["bb_upper"] < out["kc_upper"]) & (out["bb_lower"] > out["kc_lower"])
     up_move = out["high"].diff()
     down_move = -out["low"].diff()
     plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=out.index)
@@ -561,7 +578,7 @@ if runtime.config.autostart:
 with gr.Blocks(title="OKX Demo Quant Bot") as demo:
     gr.Markdown("# OKX Demo Quant Bot")
     gr.Markdown(
-        "Modo demo para futuros perpetuos OKX. Estrategia: Bollinger squeeze breakout, ATR, VWAP, volumen, tendencia 15m y control de exposición."
+        "Modo demo para futuros perpetuos OKX. Estrategia: Adaptive Donchian Momentum con ATR, VWAP, ADX/DI, volumen, funding, open interest, tendencia 15m y control de exposición."
     )
     with gr.Row():
         start_btn = gr.Button("Iniciar demo", variant="primary")

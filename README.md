@@ -16,7 +16,17 @@ Bot educativo para OKX demo trading en futuros perpetuos USDT-SWAP.
 
 ## Advertencia profesional
 
-Este sistema no garantiza rentabilidad. Una estrategia de Bollinger Bands + ATR puede fallar por rupturas falsas, slippage, spreads, latencia, cambios de régimen, baja liquidez y colas de distribución. El bot incluye filtros de liquidez, tendencia, volatilidad, volumen, límite de exposición y modo demo por defecto, pero aun así requiere backtesting, forward testing y auditoría antes de cualquier uso real.
+Este sistema no garantiza rentabilidad. Una estrategia técnica puede fallar por rupturas falsas, slippage, spreads, latencia, cambios de régimen, baja liquidez, funding adverso y colas de distribución. El bot incluye filtros de liquidez, tendencia, volatilidad, volumen, funding, open interest, límite de exposición y modo demo por defecto, pero aun así requiere backtesting, forward testing y auditoría antes de cualquier uso real.
+
+## Estrategia actual
+
+- Universo dinámico: top 70 futuros perpetuos USDT-SWAP por volumen.
+- Filtro de exclusión: metales, tokens de acciones y productos no cripto puros.
+- Entrada: ruptura de compresión tipo TTM Squeeze, con Bollinger Bands dentro/saliendo de Keltner Channels.
+- Confirmaciones: ADX/DI, RSI de momentum no exhausto, VWAP, volumen relativo y tendencia 15m.
+- Filtros de microestructura: spread máximo y volatilidad ATR mínima/máxima.
+- Filtros de derivados: evita funding extremo o demasiado unilateral.
+- Gestión: stop 2 ATR, objetivo inicial 2R, break-even parcial y trailing dinámico.
 
 ## Secretos requeridos
 
@@ -35,4 +45,3 @@ Opcionales:
 - `MAX_CONCURRENT_POSITIONS=10`
 - `TIMEFRAME=5m`
 - `CONFIRM_TIMEFRAME=15m`
-

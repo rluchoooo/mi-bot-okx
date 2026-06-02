@@ -46,6 +46,9 @@ class BotConfig:
     max_spread_bps: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_SPREAD_BPS", "8")))
     min_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MIN_ATR_PCT", "0.0015")))
     max_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_ATR_PCT", "0.025")))
+    min_adx: float = field(default_factory=lambda: float(os.getenv("MIN_ADX", "18")))
+    max_funding_abs: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_FUNDING_ABS", "0.0012")))
+    avoid_one_way_funding: Decimal = field(default_factory=lambda: Decimal(os.getenv("AVOID_ONE_WAY_FUNDING", "0.0008")))
     daily_loss_stop_usdt: Decimal = field(default_factory=lambda: Decimal(os.getenv("DAILY_LOSS_STOP_USDT", "45")))
     cooldown_minutes: int = field(default_factory=lambda: int(os.getenv("COOLDOWN_MINUTES", "20")))
 
@@ -78,6 +81,7 @@ class ManagedPosition:
     stop: Decimal
     take_profit: Decimal
     atr: Decimal
+    initial_risk: Decimal
     opened_at: float
     break_even_done: bool = False
     trailing_active: bool = False
@@ -143,6 +147,20 @@ class OKXClient:
     async def tickers(self) -> list[dict[str, Any]]:
         return await self.request("GET", "/api/v5/market/tickers?instType=SWAP")
 
+    async def funding_rate(self, inst_id: str) -> Decimal | None:
+        rows = await self.request("GET", f"/api/v5/public/funding-rate?instId={inst_id}")
+        if not rows:
+            return None
+        raw = rows[0].get("fundingRate")
+        return Decimal(str(raw)) if raw not in (None, "") else None
+
+    async def open_interest(self, inst_id: str) -> Decimal | None:
+        rows = await self.request("GET", f"/api/v5/public/open-interest?instType=SWAP&instId={inst_id}")
+        if not rows:
+            return None
+        raw = rows[0].get("oiCcy") or rows[0].get("oi")
+        return Decimal(str(raw)) if raw not in (None, "") else None
+
     async def candles(self, inst_id: str, bar: str, limit: int = 120) -> pd.DataFrame:
         path = f"/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
         rows = await self.request("GET", path)
@@ -184,7 +202,15 @@ class StrategyEngine:
     def __init__(self, config: BotConfig):
         self.config = config
 
-    def signal(self, inst_id: str, df: pd.DataFrame, higher_df: pd.DataFrame, ticker: dict[str, Any]) -> Signal | None:
+    def signal(
+        self,
+        inst_id: str,
+        df: pd.DataFrame,
+        higher_df: pd.DataFrame,
+        ticker: dict[str, Any],
+        funding_rate: Decimal | None,
+        open_interest: Decimal | None,
+    ) -> Signal | None:
         if len(df) < 80 or len(higher_df) < 60:
             return None
         frame = add_indicators(df)
@@ -206,10 +232,17 @@ class StrategyEngine:
         if spread_bps is None or spread_bps > self.config.max_spread_bps:
             return None
 
+        if row.adx < self.config.min_adx or high_row.adx < self.config.min_adx - 2:
+            return None
+
         bandwidth_rank = _percentile_rank(frame["bb_width"].tail(80).to_numpy(), row.bb_width)
         volume_z = row.volume_z
-        squeeze_release = bandwidth_rank < 0.35 and row.bb_width > prev.bb_width
-        if not squeeze_release or volume_z < 0.20:
+        was_ttm_squeeze = bool(prev.squeeze_on) or frame["squeeze_on"].tail(8).any()
+        squeeze_release = (was_ttm_squeeze and not bool(row.squeeze_on)) or (bandwidth_rank < 0.30 and row.bb_width > prev.bb_width)
+        if not squeeze_release or volume_z < 0.35:
+            return None
+
+        if funding_rate is not None and abs(funding_rate) > self.config.max_funding_abs:
             return None
 
         high_trend_up = high_row.close > high_row.ema_50 and high_row.ema_20 > high_row.ema_50
@@ -220,12 +253,26 @@ class StrategyEngine:
         long_breakout = prev.close <= prev.bb_upper and row.close > row.bb_upper and row.close > row.ema_20
         short_breakout = prev.close >= prev.bb_lower and row.close < row.bb_lower and row.close < row.ema_20
 
-        if long_breakout and high_trend_up and above_vwap:
-            score = float(volume_z + (0.35 - bandwidth_rank) + min(float(atr_pct * 100), 2.0))
-            return Signal(inst_id, "long", close, atr, score, "BB squeeze breakout + volume + 15m trend + VWAP")
-        if short_breakout and high_trend_down and below_vwap:
-            score = float(volume_z + (0.35 - bandwidth_rank) + min(float(atr_pct * 100), 2.0))
-            return Signal(inst_id, "short", close, atr, score, "BB squeeze breakdown + volume + 15m trend + VWAP")
+        long_momentum_ok = 50 <= row.rsi <= 72 and row.plus_di > row.minus_di and row.close > row.kc_upper
+        short_momentum_ok = 28 <= row.rsi <= 50 and row.minus_di > row.plus_di and row.close < row.kc_lower
+
+        if funding_rate is not None:
+            if funding_rate > self.config.avoid_one_way_funding:
+                long_momentum_ok = False
+            if funding_rate < -self.config.avoid_one_way_funding:
+                short_momentum_ok = False
+
+        oi_bonus = 0.15 if open_interest is not None and open_interest > 0 else 0.0
+        adx_bonus = min((row.adx - self.config.min_adx) / 20, 0.75)
+        compression_bonus = max(0.0, 0.30 - bandwidth_rank)
+        base_score = float(volume_z + compression_bonus + adx_bonus + min(float(atr_pct * 100), 2.0) + oi_bonus)
+
+        if long_breakout and high_trend_up and above_vwap and long_momentum_ok:
+            reason = "TTM squeeze breakout + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
+            return Signal(inst_id, "long", close, atr, base_score, reason)
+        if short_breakout and high_trend_down and below_vwap and short_momentum_ok:
+            reason = "TTM squeeze breakdown + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
+            return Signal(inst_id, "short", close, atr, base_score, reason)
         return None
 
 
@@ -235,6 +282,7 @@ class BotRuntime:
         self.log: list[str] = []
         self.positions: dict[str, ManagedPosition] = {}
         self.cooldowns: dict[str, float] = {}
+        self.derivatives_cache: dict[str, tuple[float, Decimal | None, Decimal | None]] = {}
         self.running = False
         self.thread: threading.Thread | None = None
         self.last_scan = "never"
@@ -311,7 +359,8 @@ class BotRuntime:
                 continue
             df = await client.candles(inst_id, self.config.timeframe)
             higher = await client.candles(inst_id, self.config.confirm_timeframe)
-            signal = strategy.signal(inst_id, df, higher, ticker_map[inst_id])
+            funding_rate, open_interest = await self._derivatives_context(client, inst_id)
+            signal = strategy.signal(inst_id, df, higher, ticker_map[inst_id], funding_rate, open_interest)
             if signal:
                 candidates.append(signal)
 
@@ -329,6 +378,15 @@ class BotRuntime:
             rows.append((inst_id, quote_volume))
         rows.sort(key=lambda item: item[1], reverse=True)
         return [inst_id for inst_id, _ in rows[: self.config.top_symbols]]
+
+    async def _derivatives_context(self, client: OKXClient, inst_id: str) -> tuple[Decimal | None, Decimal | None]:
+        cached = self.derivatives_cache.get(inst_id)
+        if cached and time.time() - cached[0] < 300:
+            return cached[1], cached[2]
+        funding_rate = await client.funding_rate(inst_id)
+        open_interest = await client.open_interest(inst_id)
+        self.derivatives_cache[inst_id] = (time.time(), funding_rate, open_interest)
+        return funding_rate, open_interest
 
     async def _open_position(self, client: OKXClient, instrument: Instrument, signal: Signal) -> None:
         notional = self.config.order_margin_usdt * self.config.leverage
@@ -355,6 +413,7 @@ class BotRuntime:
             stop=stop,
             take_profit=take_profit,
             atr=signal.atr,
+            initial_risk=risk,
             opened_at=time.time(),
             best_price=signal.price,
         )
@@ -371,7 +430,7 @@ class BotRuntime:
             await self._manage_single_position(client, pos, price)
 
     async def _manage_single_position(self, client: OKXClient, pos: ManagedPosition, price: Decimal) -> None:
-        risk = abs(pos.entry - pos.stop)
+        risk = pos.initial_risk
         if risk <= 0:
             return
         favorable = price - pos.entry if pos.side == "long" else pos.entry - price
@@ -438,6 +497,27 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
         axis=1,
     ).max(axis=1)
     out["atr"] = tr.ewm(alpha=1 / 14, adjust=False).mean()
+    out["kc_mid"] = out["ema_20"]
+    out["kc_upper"] = out["kc_mid"] + 1.5 * out["atr"]
+    out["kc_lower"] = out["kc_mid"] - 1.5 * out["atr"]
+    out["squeeze_on"] = (out["bb_upper"] < out["kc_upper"]) & (out["bb_lower"] > out["kc_lower"])
+    up_move = out["high"].diff()
+    down_move = -out["low"].diff()
+    plus_dm = pd.Series(np.where((up_move > down_move) & (up_move > 0), up_move, 0.0), index=out.index)
+    minus_dm = pd.Series(np.where((down_move > up_move) & (down_move > 0), down_move, 0.0), index=out.index)
+    atr_for_di = out["atr"].replace(0, np.nan)
+    out["plus_di"] = 100 * plus_dm.ewm(alpha=1 / 14, adjust=False).mean() / atr_for_di
+    out["minus_di"] = 100 * minus_dm.ewm(alpha=1 / 14, adjust=False).mean() / atr_for_di
+    dx = 100 * (out["plus_di"] - out["minus_di"]).abs() / (out["plus_di"] + out["minus_di"]).replace(0, np.nan)
+    out["adx"] = dx.ewm(alpha=1 / 14, adjust=False).mean()
+    delta = out["close"].diff()
+    gain = delta.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    out["rsi"] = 100 - (100 / (1 + rs))
+    out.loc[(loss == 0) & (gain > 0), "rsi"] = 100
+    out.loc[(gain == 0) & (loss > 0), "rsi"] = 0
+    out["rsi"] = out["rsi"].fillna(50)
     volume_ma = out["volume"].rolling(30).mean()
     volume_std = out["volume"].rolling(30).std(ddof=0).replace(0, np.nan)
     out["volume_z"] = ((out["volume"] - volume_ma) / volume_std).fillna(0)
@@ -491,8 +571,9 @@ with gr.Blocks(title="OKX Demo Quant Bot") as demo:
     start_btn.click(lambda: runtime.start(), outputs=output).then(lambda: runtime.status_markdown(), outputs=output)
     stop_btn.click(lambda: runtime.stop(), outputs=output).then(lambda: runtime.status_markdown(), outputs=output)
     refresh_btn.click(lambda: runtime.status_markdown(), outputs=output)
-    timer = gr.Timer(10)
-    timer.tick(lambda: runtime.status_markdown(), outputs=output)
+    if hasattr(gr, "Timer"):
+        timer = gr.Timer(10)
+        timer.tick(lambda: runtime.status_markdown(), outputs=output)
 
 
 if __name__ == "__main__":

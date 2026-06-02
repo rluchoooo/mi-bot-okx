@@ -1,0 +1,6 @@
+gradio==5.36.2
+httpx==0.28.1
+pandas==2.2.3
+numpy==2.2.6
+pydantic==2.11.7
+

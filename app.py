@@ -178,6 +178,9 @@ class OKXClient:
         raw = rows[0].get("oiCcy") or rows[0].get("oi")
         return Decimal(str(raw)) if raw not in (None, "") else None
 
+    async def positions(self) -> list[dict[str, Any]]:
+        return await self.request("GET", "/api/v5/account/positions?instType=SWAP", auth=True)
+
     async def candles(self, inst_id: str, bar: str, limit: int = 120) -> pd.DataFrame:
         path = f"/api/v5/market/candles?instId={inst_id}&bar={bar}&limit={limit}"
         rows = await self.request("GET", path)
@@ -463,6 +466,47 @@ class BotRuntime:
             await asyncio.gather(self._main(), self._fast_trailing_loop())
         asyncio.run(run_both())
 
+    async def sync_positions(self, client: OKXClient, instruments: dict[str, Instrument]) -> None:
+        try:
+            active_positions = await client.positions()
+            for pos_data in active_positions:
+                inst_id = pos_data["instId"]
+                if inst_id not in instruments or inst_id in self.positions:
+                    continue
+                side_str = pos_data["posSide"]
+                if side_str == "net":
+                    side_str = "long" if Decimal(pos_data["pos"]) > 0 else "short"
+                size = Decimal(pos_data["pos"]).abs()
+                if size == 0:
+                    continue
+                entry = Decimal(pos_data["avgPx"])
+                
+                risk = entry * Decimal("0.05")
+                if side_str == "long":
+                    stop = entry - risk
+                    tp = entry + risk * self.config.reward_risk
+                else:
+                    stop = entry + risk
+                    tp = entry - risk * self.config.reward_risk
+                    
+                self.positions[inst_id] = ManagedPosition(
+                    inst_id=inst_id,
+                    side=side_str,
+                    size=size,
+                    entry=entry,
+                    stop=stop,
+                    take_profit=tp,
+                    atr=risk / self.config.atr_stop_mult,
+                    ct_val=instruments[inst_id].ct_val,
+                    initial_risk=risk,
+                    opened_at=time.time(),
+                    best_price=entry,
+                    last_price=entry,
+                )
+                self._log(f"[SYNC] Adoptada posición pre-existente {side_str.upper()} en {inst_id}. SL Virtual: {stop:.6f}")
+        except Exception as e:
+            self._log(f"[SYNC] Error sincronizando posiciones: {e}")
+
     async def _fast_trailing_loop(self) -> None:
         client = OKXClient(self.config)
         try:
@@ -481,11 +525,15 @@ class BotRuntime:
     async def _main(self) -> None:
         client = OKXClient(self.config)
         strategy = StrategyEngine(self.config)
+        instruments = {}
         try:
-            instruments = {item.inst_id: item for item in await client.instruments() if item.state == "live"}
-            self._log(f"Universo OKX cargado: {len(instruments)} swaps USDT elegibles.")
             while self.running:
                 try:
+                    if not instruments:
+                        instruments = {item.inst_id: item for item in await client.instruments() if item.state == "live"}
+                        self._log(f"Universo OKX cargado: {len(instruments)} swaps USDT elegibles.")
+                        await self.sync_positions(client, instruments)
+
                     await self._tick(client, strategy, instruments)
                     self.last_error = ""
                 except Exception as exc:

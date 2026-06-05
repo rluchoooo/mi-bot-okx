@@ -14,6 +14,9 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_DOWN
 from typing import Any, Literal
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import gradio as gr
 import httpx
 import numpy as np
@@ -44,14 +47,14 @@ class BotConfig:
     trailing_trigger_r: Decimal = field(default_factory=lambda: Decimal(os.getenv("TRAILING_TRIGGER_R", "0.70")))
     trailing_lock_r: Decimal = field(default_factory=lambda: Decimal(os.getenv("TRAILING_LOCK_R", "0.50")))
     poll_seconds: float = field(default_factory=lambda: float(os.getenv("POLL_SECONDS", "20")))
-    max_spread_bps: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_SPREAD_BPS", "8")))
-    min_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MIN_ATR_PCT", "0.0015")))
-    max_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_ATR_PCT", "0.025")))
-    min_adx: float = field(default_factory=lambda: float(os.getenv("MIN_ADX", "18")))
-    max_funding_abs: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_FUNDING_ABS", "0.0012")))
-    avoid_one_way_funding: Decimal = field(default_factory=lambda: Decimal(os.getenv("AVOID_ONE_WAY_FUNDING", "0.0008")))
+    max_spread_bps: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_SPREAD_BPS", "50")))
+    min_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MIN_ATR_PCT", "0.0001")))
+    max_atr_pct: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_ATR_PCT", "0.15")))
+    min_adx: float = field(default_factory=lambda: float(os.getenv("MIN_ADX", "5")))
+    max_funding_abs: Decimal = field(default_factory=lambda: Decimal(os.getenv("MAX_FUNDING_ABS", "0.01")))
+    avoid_one_way_funding: Decimal = field(default_factory=lambda: Decimal(os.getenv("AVOID_ONE_WAY_FUNDING", "0.005")))
     daily_loss_stop_usdt: Decimal = field(default_factory=lambda: Decimal(os.getenv("DAILY_LOSS_STOP_USDT", "45")))
-    cooldown_minutes: int = field(default_factory=lambda: int(os.getenv("COOLDOWN_MINUTES", "20")))
+    cooldown_minutes: int = field(default_factory=lambda: int(os.getenv("COOLDOWN_MINUTES", "5")))
 
 
 @dataclass
@@ -238,77 +241,38 @@ class StrategyEngine:
         if close <= 0 or atr <= 0:
             return None
 
+        # ── MODO TEST: filtros mínimos para verificar ejecución ──
         atr_pct = atr / close
         if atr_pct < self.config.min_atr_pct or atr_pct > self.config.max_atr_pct:
             return None
 
         spread_bps = _spread_bps(ticker)
-        if spread_bps is None or spread_bps > self.config.max_spread_bps:
-            return None
-
-        if row.adx < self.config.min_adx or high_row.adx < self.config.min_adx - 2:
+        if spread_bps is not None and spread_bps > self.config.max_spread_bps:
             return None
 
         volume_z = row.volume_z
-        if volume_z < 0.35:
-            return None
-
-        if funding_rate is not None and abs(funding_rate) > self.config.max_funding_abs:
-            return None
-
-        high_trend_up = high_row.close > high_row.ema_100 and high_row.ema_20 > high_row.ema_50 > high_row.ema_100
-        high_trend_down = high_row.close < high_row.ema_100 and high_row.ema_20 < high_row.ema_50 < high_row.ema_100
-        above_vwap = row.close > row.vwap
-        below_vwap = row.close < row.vwap
-
         range_width = Decimal(str(row.donchian_upper - row.donchian_lower))
-        if range_width < atr * Decimal("1.25"):
-            return None
+        atr_extension = abs(Decimal(str(row.close - row.vwap))) / atr if atr > 0 else Decimal("0")
 
-        atr_extension = abs(Decimal(str(row.close - row.vwap))) / atr
-        if atr_extension > Decimal("1.80"):
-            return None
+        # Señal: solo necesita ruptura Donchian básica o pullback EMA20
+        long_breakout = prev.close <= prev.donchian_upper and row.close > row.donchian_upper
+        short_breakout = prev.close >= prev.donchian_lower and row.close < row.donchian_lower
+        long_pullback = row.low <= row.ema_20 and row.close > row.open and row.close > row.donchian_mid
+        short_pullback = row.high >= row.ema_20 and row.close < row.open and row.close < row.donchian_mid
 
-        long_breakout = prev.close <= prev.donchian_upper and row.close > row.donchian_upper and row.close > row.ema_20
-        short_breakout = prev.close >= prev.donchian_lower and row.close < row.donchian_lower and row.close < row.ema_20
-        long_pullback_continuation = (
-            row.low <= row.ema_20
-            and row.close > row.open
-            and row.close > row.donchian_mid
-            and row.close > prev.high
-            and row.plus_di > row.minus_di
-        )
-        short_pullback_continuation = (
-            row.high >= row.ema_20
-            and row.close < row.open
-            and row.close < row.donchian_mid
-            and row.close < prev.low
-            and row.minus_di > row.plus_di
-        )
-
-        long_momentum_ok = 52 <= row.rsi <= 76 and row.plus_di > row.minus_di and row.close > row.ema_50
-        short_momentum_ok = 24 <= row.rsi <= 48 and row.minus_di > row.plus_di and row.close < row.ema_50
-
-        if funding_rate is not None:
-            if funding_rate > self.config.avoid_one_way_funding:
-                long_momentum_ok = False
-            if funding_rate < -self.config.avoid_one_way_funding:
-                short_momentum_ok = False
+        # Momentum mínimo: solo dirección DI
+        long_momentum_ok = row.plus_di > row.minus_di
+        short_momentum_ok = row.minus_di > row.plus_di
 
         oi_bonus = 0.15 if open_interest is not None and open_interest > 0 else 0.0
-        adx_bonus = min((row.adx - self.config.min_adx) / 20, 0.75)
-        structure_bonus = min(float(range_width / atr) / 10, 0.50)
-        extension_penalty = float(atr_extension) * 0.20
-        base_score = float(volume_z + adx_bonus + structure_bonus + min(float(atr_pct * 100), 2.0) + oi_bonus - extension_penalty)
+        base_score = float(volume_z + oi_bonus + 1.0)
 
-        if (long_breakout or long_pullback_continuation) and high_trend_up and above_vwap and long_momentum_ok:
-            setup = "Donchian breakout" if long_breakout else "EMA pullback continuation"
-            reason = f"{setup} + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
-            return Signal(inst_id, "long", close, atr, base_score, reason)
-        if (short_breakout or short_pullback_continuation) and high_trend_down and below_vwap and short_momentum_ok:
-            setup = "Donchian breakdown" if short_breakout else "EMA pullback continuation"
-            reason = f"{setup} + ADX/DI trend + RSI momentum + VWAP + volume + derivatives filter"
-            return Signal(inst_id, "short", close, atr, base_score, reason)
+        if (long_breakout or long_pullback) and long_momentum_ok:
+            setup = "TEST breakout LONG" if long_breakout else "TEST pullback LONG"
+            return Signal(inst_id, "long", close, atr, base_score, setup)
+        if (short_breakout or short_pullback) and short_momentum_ok:
+            setup = "TEST breakout SHORT" if short_breakout else "TEST pullback SHORT"
+            return Signal(inst_id, "short", close, atr, base_score, setup)
         return None
 
 

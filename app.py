@@ -92,7 +92,7 @@ class ManagedPosition:
     trailing_active: bool = False
     best_price: Decimal = Decimal("0")
     last_price: Decimal = Decimal("0")
-
+    panic_mode: bool = False
 
 @dataclass
 class TradeRecord:
@@ -339,7 +339,9 @@ class BotRuntime:
         self.running = True
         self.thread = threading.Thread(target=self._run_loop, daemon=True)
         self.thread.start()
-        self._log("Bot iniciado en OKX demo.")
+        self._log("[SYSTEM] OKX Quant Terminal V3.1 Iniciado.")
+        self._log("[SYSTEM] ✔️ Escáner Rápido (3s) activo.")
+        self._log("[SYSTEM] ✔️ Agente Guardián (Failsafe) activo.")
         return self.dashboard_html()
 
     def stop(self) -> str:
@@ -611,24 +613,38 @@ class BotRuntime:
 
         hit_stop = price <= pos.stop if pos.side == "long" else price >= pos.stop
         hit_tp = (price >= pos.take_profit if pos.side == "long" else price <= pos.take_profit) and not pos.trailing_active
+
+        if pos.panic_mode:
+            hit_stop = True
+            hit_tp = False
+
         if hit_stop or hit_tp:
-            await client.close_position(pos.inst_id, pos.side)
-            outcome = "StopLoss/Trailing" if hit_stop else "TakeProfit"
-            self.closed_trades.append(
-                TradeRecord(
-                    inst_id=pos.inst_id,
-                    side=pos.side,
-                    entry=pos.entry,
-                    exit_price=price,
-                    pnl=_position_pnl(pos, price),
-                    reason=outcome,
-                    closed_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            try:
+                await client.close_position(pos.inst_id, pos.side)
+                outcome = "StopLoss/Trailing" if hit_stop else "TakeProfit"
+                if pos.panic_mode:
+                    outcome = "Panic/Guardian"
+                self.closed_trades.append(
+                    TradeRecord(
+                        inst_id=pos.inst_id,
+                        side=pos.side,
+                        entry=pos.entry,
+                        exit_price=price,
+                        pnl=_position_pnl(pos, price),
+                        reason=outcome,
+                        closed_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    )
                 )
-            )
-            self.closed_trades = self.closed_trades[-100:]
-            self._log(f"[{pos.inst_id}] CIERRE EJECUTADO via {outcome} {pos.side} a {price:.6f}")
-            self.cooldowns[pos.inst_id] = time.time() + self.config.cooldown_minutes * 60
-            self.positions.pop(pos.inst_id, None)
+                self.closed_trades = self.closed_trades[-100:]
+                self._log(f"[{pos.inst_id}] CIERRE EJECUTADO via {outcome} {pos.side} a {price:.6f}")
+                self.cooldowns[pos.inst_id] = time.time() + self.config.cooldown_minutes * 60
+                self.positions.pop(pos.inst_id, None)
+            except Exception as e:
+                if not pos.panic_mode:
+                    pos.panic_mode = True
+                    self._log(f"[GUARDIAN] ⚠️ Falla API al cerrar {pos.inst_id}. Activando PANIC MODE. TP anulado.")
+                else:
+                    self._log(f"[GUARDIAN] 🚨 Reintentando cierre de emergencia para {pos.inst_id}...")
 
     def _missing_secrets(self) -> list[str]:
         checks = {

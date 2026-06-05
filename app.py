@@ -457,7 +457,24 @@ class BotRuntime:
 """
 
     def _run_loop(self) -> None:
-        asyncio.run(self._main())
+        async def run_both():
+            await asyncio.gather(self._main(), self._fast_trailing_loop())
+        asyncio.run(run_both())
+
+    async def _fast_trailing_loop(self) -> None:
+        client = OKXClient(self.config)
+        try:
+            while self.running:
+                try:
+                    if self.positions:
+                        tickers = await client.tickers()
+                        ticker_map = {row["instId"]: row for row in tickers}
+                        await self._manage_positions(client, ticker_map)
+                except Exception as exc:
+                    self._log(f"Error en escáner rápido: {exc}")
+                await asyncio.sleep(3)
+        finally:
+            await client.close()
 
     async def _main(self) -> None:
         client = OKXClient(self.config)
@@ -471,7 +488,7 @@ class BotRuntime:
                     self.last_error = ""
                 except Exception as exc:
                     self.last_error = str(exc)
-                    self._log(f"Error controlado: {exc}")
+                    self._log(f"Error controlado (main): {exc}")
                 await asyncio.sleep(self.config.poll_seconds)
         finally:
             await client.close()
@@ -480,7 +497,7 @@ class BotRuntime:
         tickers = await client.tickers()
         ticker_map = {row["instId"]: row for row in tickers if row.get("instId") in instruments}
         universe = self._select_universe(ticker_map)
-        await self._manage_positions(client, ticker_map)
+        # _manage_positions is now handled entirely by _fast_trailing_loop
         self.last_scan = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         if len(self.positions) >= self.config.max_concurrent_positions:
             return

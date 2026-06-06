@@ -63,21 +63,22 @@ def breakeven_sl(entry: Decimal, side: str, tp_dist: Decimal) -> Decimal:
     return entry + lock if side == "long" else entry - lock
 
 
-def trail_distance(tp_dist: Decimal) -> Decimal:
-    """Correa del trailing stop = 15% de la distancia total al TP."""
-    return TRAILING_DISTANCE_PCT * tp_dist
+def trail_distance(atr_5m: Decimal) -> Decimal:
+    """Correa del trailing stop = 2.5x ATR."""
+    from config import TRAILING_DISTANCE_ATR
+    return TRAILING_DISTANCE_ATR * atr_5m
 
 
 def new_trail_sl(
     price: Decimal,
     side: str,
-    tp_dist: Decimal,
+    atr_5m: Decimal,
     current_sl: Decimal,
 ) -> Decimal:
     """
     Nuevo trailing stop siguiendo el precio (nunca retrocede).
     """
-    dist      = trail_distance(tp_dist)
+    dist      = trail_distance(atr_5m)
     candidate = price - dist if side == "long" else price + dist
     return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
 

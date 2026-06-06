@@ -527,7 +527,7 @@ class QuantumBotRuntime:
                 else:
                     raise lev_err
                 
-            ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price, sl=sig.sl, tp=sig.tp)
+            ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price, sl=sl, tp=tp)
             now_ts = time.time()
             with get_session() as db:
                 trade = Trade(

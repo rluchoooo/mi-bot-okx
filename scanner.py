@@ -86,7 +86,8 @@ class OKXClient:
         if self.simulated:
             headers["x-simulated-trading"] = "1"
         r = await self._client.request(method, path, content=payload or None, headers=headers)
-        r.raise_for_status()
+        if r.status_code != 200:
+            raise RuntimeError(f"HTTP {r.status_code}: {r.text}")
         data = r.json()
         if data.get("code") != "0":
             raise RuntimeError(f"OKX {data.get('code')}: {data.get('msg')} | {data.get('data')}")
@@ -114,9 +115,9 @@ class OKXClient:
     async def instruments(self) -> list[dict]:
         return await self._req("GET", "/api/v5/public/instruments?instType=SWAP")
 
-    async def set_leverage(self, inst_id: str, lever: int) -> None:
+    async def set_leverage(self, inst_id: str, lever: int, pos_side: str) -> None:
         await self._req("POST", "/api/v5/account/set-leverage",
-                        {"instId": inst_id, "lever": str(lever), "mgnMode": "isolated"}, auth=True)
+                        {"instId": inst_id, "lever": str(lever), "mgnMode": "isolated", "posSide": pos_side}, auth=True)
 
     async def place_limit_order(self, inst_id: str, side: str, qty: Decimal, price: Decimal) -> str:
         pos_side = "long" if side == "buy" else "short"
@@ -422,8 +423,18 @@ class QuantumBotRuntime:
             self._log(f"{iid}: qty {qty} < min {min_sz}. Skip.")
             return
         try:
-            await client.set_leverage(iid, LEVERAGE)
             order_side = "buy" if sig.side == "long" else "sell"
+            pos_side   = "long" if sig.side == "long" else "short"
+            try:
+                await client.set_leverage(iid, LEVERAGE, pos_side)
+            except Exception as lev_err:
+                # If it fails with posSide, fallback without posSide (for net mode)
+                if "51000" in str(lev_err) or "posSide" in str(lev_err):
+                    await client._req("POST", "/api/v5/account/set-leverage",
+                                      {"instId": iid, "lever": str(LEVERAGE), "mgnMode": "isolated"}, auth=True)
+                else:
+                    raise lev_err
+                
             ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price)
             now_ts = time.time()
             with get_session() as db:

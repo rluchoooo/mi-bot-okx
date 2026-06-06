@@ -192,6 +192,7 @@ class QuantumBotRuntime:
     def _log(self, msg: str, level: str = "INFO") -> None:
         stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
         line  = f"{stamp} | [{level}] {msg}"
+        print(line, flush=True)  # <-- ESTO HACE QUE SE VEA EN LA PESTAÑA LOGS DE HUGGING FACE
         with self._lock:
             self._log_buffer.append(line)
             self._log_buffer = self._log_buffer[-300:]
@@ -498,11 +499,12 @@ class QuantumBotRuntime:
     # ── Reconcile Loop (30s) ─────────────────────────────────────────
 
     async def _reconcile_loop(self, client: OKXClient) -> None:
+        """El Agente Supervisor: vigila continuamente las posiciones activas."""
         while self.running:
             try:
                 await self._reconcile_tick(client)
             except Exception as e:
-                self._log(f"Error en reconcile: {e}", "ERROR")
+                self._log(f"Error en el Agente Supervisor: {e}", "ERROR")
             await asyncio.sleep(RECONCILE_INTERVAL)
 
     async def _reconcile_tick(self, client: OKXClient) -> None:
@@ -512,6 +514,11 @@ class QuantumBotRuntime:
             ).all()
             if not open_trades:
                 return
+            
+            # Log silencioso o periódico del supervisor para que sepas que está activo
+            if int(time.time()) % 120 < RECONCILE_INTERVAL:
+                self._log(f"[AGENTE SUPERVISOR] Vigilando {len(open_trades)} posiciones activas. Comprobando latencias y métricas de Breakeven/Trailing...", "SYSTEM")
+
             trade_snapshots = [
                 {
                     "id":          t.id,

@@ -182,10 +182,13 @@ class OKXClient:
     async def get_balance(self) -> float:
         try:
             rows = await self._req("GET", "/api/v5/account/balance", auth=True)
-            if rows and "totalEq" in rows[0]:
+            if rows and "details" in rows[0] and len(rows[0]["details"]) > 0:
+                # Some OKX accounts have balance in details -> eq
+                return float(rows[0].get("totalEq", 0) or rows[0]["details"][0].get("eq", 0))
+            elif rows and "totalEq" in rows[0]:
                 return float(rows[0]["totalEq"])
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Error fetching balance: {e}")
         return 0.0
 
 

@@ -56,6 +56,7 @@ TRAIL_RETRY_SECONDS     = 10                 # Reintento si exchange rechaza ord
 # ── MAX LOSS & SALIDA TEMPRANA (Early Exit) ───────────────────────────
 MAX_ABSOLUTE_LOSS           = Decimal("-5.0")
 EARLY_EXIT_SL_PCT           = Decimal("0.40")
+EARLY_EXIT_VOL_MULT         = 1.8
 EARLY_EXIT_LOOKBACK_MINUTES = 120
 
 # ── FILTRO BTC (Escudo Macro) ─────────────────────────────────────────

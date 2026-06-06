@@ -81,6 +81,7 @@ def build_dashboard() -> str:
     running_badge = "QUANTUM ACTIVO" if runtime.running else "DETENIDO"
     status_cls    = "ok" if runtime.running else "warn"
     shield_label  = _esc(runtime.shield.status_label)
+    shield_cls    = "" if "LIBRE" in shield_label else "shield-active"
 
     # ── Position rows ──
     pos_rows = ""

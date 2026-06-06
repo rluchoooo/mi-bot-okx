@@ -27,13 +27,13 @@ DISALLOWED_BASES = {
 
 # ── INDICADORES ───────────────────────────────────────────────────────
 RSI_PERIOD  = 14
-RSI_MIN     = 35
-RSI_MAX     = 65
-RSI_DIV_MIN_DIFF = 2.0      # Diferencia mínima entre pivotes RSI para confirmar divergencia
+RSI_MIN     = 25
+RSI_MAX     = 75
+RSI_DIV_MIN_DIFF = 1.0      # Diferencia mínima entre pivotes RSI para confirmar divergencia
 
 ATR_PERIOD  = 14
 ADX_PERIOD  = 14
-ADX_MIN     = 20
+ADX_MIN     = 12
 
 EMA_FAST    = 9
 EMA_MID     = 21

@@ -119,13 +119,36 @@ class OKXClient:
         await self._req("POST", "/api/v5/account/set-leverage",
                         {"instId": inst_id, "lever": str(lever), "mgnMode": "isolated", "posSide": pos_side}, auth=True)
 
-    async def place_limit_order(self, inst_id: str, side: str, qty: Decimal, price: Decimal) -> str:
+    async def place_limit_order(self, inst_id: str, side: str, qty: Decimal, price: Decimal, sl: Decimal = None, tp: Decimal = None) -> str:
         pos_side = "long" if side == "buy" else "short"
-        rows = await self._req("POST", "/api/v5/trade/order", {
+        payload = {
             "instId": inst_id, "tdMode": "isolated", "side": side,
             "posSide": pos_side, "ordType": "limit", "sz": str(qty), "px": str(price),
-        }, auth=True)
+        }
+        if sl:
+            payload["slTriggerPx"] = str(sl)
+            payload["slOrdPx"] = "-1"
+        if tp:
+            payload["tpTriggerPx"] = str(tp)
+            payload["tpOrdPx"] = "-1"
+            
+        rows = await self._req("POST", "/api/v5/trade/order", payload, auth=True)
         return rows[0].get("ordId", "") if rows else ""
+
+    async def cancel_algo_orders(self, inst_id: str) -> None:
+        try:
+            pending = []
+            for o_type in ["oco", "conditional"]:
+                res = await self._req("GET", f"/api/v5/trade/orders-algo-pending?instId={inst_id}&ordType={o_type}", auth=True)
+                pending.extend(res)
+            if pending:
+                # Cancel in batches of 10 if necessary, but usually it's just 2 orders (SL and TP)
+                payload = [{"instId": inst_id, "algoId": p["algoId"]} for p in pending[:10]]
+                await self._req("POST", "/api/v5/trade/cancel-algos", payload, auth=True)
+        except Exception as e:
+            # Do not crash the loop if cancelling algo fails
+            pass
+
 
     async def place_market_order(self, inst_id: str, side: str, qty: Decimal) -> str:
         pos_side = "long" if side == "buy" else "short"
@@ -435,7 +458,7 @@ class QuantumBotRuntime:
                 else:
                     raise lev_err
                 
-            ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price)
+            ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price, sl=sig.sl, tp=sig.tp)
             now_ts = time.time()
             with get_session() as db:
                 trade = Trade(
@@ -632,6 +655,7 @@ class QuantumBotRuntime:
                         if decision.reason == "BREAKEVEN":
                             trade.be_activated = 1
                             trade.status = TradeStatus.BREAKEVEN
+                            await client.cancel_algo_orders(symbol)
                             await notifier.notify_breakeven(symbol, float(new_sl))
                         elif decision.reason in ("TRAIL_ACTIVATE", "TRAIL_MOVE"):
                             trade.trail_activated = 1
@@ -646,6 +670,7 @@ class QuantumBotRuntime:
 
                     elif decision.action == Action.CANCEL_TP:
                         trade.tp_price = None
+                        await client.cancel_algo_orders(symbol)
                         db.add(TradeEvent(trade_id=trade_id, event_type="CANCEL_TP",
                                           message=decision.log_message, price=float(price)))
                         db.commit()

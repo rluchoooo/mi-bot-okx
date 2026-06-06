@@ -152,6 +152,34 @@ class OKXClient:
             # Do not crash the loop if cancelling algo fails
             pass
 
+    async def place_algo_order(self, inst_id: str, pos_side: str, qty: Decimal, sl: Decimal = None, tp: Decimal = None) -> None:
+        try:
+            payload = {
+                "instId": inst_id,
+                "tdMode": "isolated",
+                "posSide": pos_side,
+                "sz": str(qty),
+            }
+            if sl and tp:
+                payload["ordType"] = "oco"
+                payload["slTriggerPx"] = str(sl)
+                payload["slOrdPx"] = "-1"
+                payload["tpTriggerPx"] = str(tp)
+                payload["tpOrdPx"] = "-1"
+            elif sl:
+                payload["ordType"] = "conditional"
+                payload["slTriggerPx"] = str(sl)
+                payload["slOrdPx"] = "-1"
+            elif tp:
+                payload["ordType"] = "conditional"
+                payload["tpTriggerPx"] = str(tp)
+                payload["tpOrdPx"] = "-1"
+            else:
+                return
+            await self._req("POST", "/api/v5/trade/order-algo", payload, auth=True)
+        except Exception:
+            pass
+
 
     async def place_market_order(self, inst_id: str, side: str, qty: Decimal) -> str:
         pos_side = "long" if side == "buy" else "short"
@@ -492,8 +520,8 @@ class QuantumBotRuntime:
                     client.candles(iid, "5m", 30),
                 )
                 for sig in [
-                    self.trend_strat.signal(iid, df_15m, df_5m),
-                    self.div_strat.signal(iid, df_15m, df_5m),
+                    self.trend_strat.signal(iid, df_1h, df_15m, df_5m),
+                    self.div_strat.signal(iid, df_1h, df_15m, df_5m),
                 ]:
                     if sig:
                         candidates.append(sig)
@@ -753,11 +781,15 @@ class QuantumBotRuntime:
                             trade.be_activated = 1
                             trade.status = TradeStatus.BREAKEVEN
                             await client.cancel_algo_orders(symbol)
+                            await client.place_algo_order(symbol, "long" if side == "buy" else "short", Decimal(str(trade.qty)), sl=new_sl, tp=Decimal(str(trade.tp_price)) if trade.tp_price else None)
                             await notifier.notify_breakeven(symbol, float(new_sl))
                         elif decision.reason in ("TRAIL_ACTIVATE", "TRAIL_MOVE"):
                             trade.trail_activated = 1
                             trade.trail_sl = float(new_sl)
                             trade.status   = TradeStatus.TRAILING
+                            await client.cancel_algo_orders(symbol)
+                            # Trailing uses SL only, removes TP explicitly
+                            await client.place_algo_order(symbol, "long" if side == "buy" else "short", Decimal(str(trade.qty)), sl=new_sl)
                             if decision.reason == "TRAIL_ACTIVATE":
                                 await notifier.notify_trailing(symbol, float(new_sl))
                         db.add(TradeEvent(trade_id=trade_id, event_type=decision.reason,
@@ -768,6 +800,8 @@ class QuantumBotRuntime:
                     elif decision.action == Action.CANCEL_TP:
                         trade.tp_price = None
                         await client.cancel_algo_orders(symbol)
+                        # Re-place SL only
+                        await client.place_algo_order(symbol, "long" if side == "buy" else "short", Decimal(str(trade.qty)), sl=Decimal(str(trade.sl_price)))
                         db.add(TradeEvent(trade_id=trade_id, event_type="CANCEL_TP",
                                           message=decision.log_message, price=float(price)))
                         db.commit()

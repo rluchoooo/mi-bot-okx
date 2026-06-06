@@ -55,8 +55,8 @@ STATUS_ICON = {
 }
 
 STRATEGY_SHORT = {
-    "QUANTUM_V10_PRO":   "TREND",
-    "QUANTUM_DIVERGENCE": "DIV",
+    "QUANTUM_V10_PRO":   "QUANTUM V10 (TENDENCIA)",
+    "QUANTUM_DIVERGENCE": "FRANCOTIRADOR (DIV)",
 }
 
 
@@ -154,7 +154,7 @@ def build_dashboard() -> str:
     <div class="status-pill {status_cls}">{running_badge}</div>
   </div>
 
-  <div class="shield-bar">
+  <div class="shield-bar {shield_cls}">
     <span class="shield-label">ESCUDO MACRO BTC →</span>
     <span class="shield-status">{shield_label}</span>
   </div>
@@ -256,9 +256,11 @@ body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit
 .status-pill { padding:12px 28px; border-radius:999px; font-size:15px; font-weight:900; border:2px solid; letter-spacing: 0.05em; text-transform: uppercase; color: white; }
 .status-pill.ok   { border-color:var(--green); background: rgba(0,255,136,0.1); box-shadow: 0 0 20px rgba(0,255,136,0.3) inset, 0 0 15px rgba(0,255,136,0.3); }
 .status-pill.warn { border-color:var(--warn);  background: rgba(255,183,77,0.1); box-shadow: 0 0 20px rgba(255,183,77,0.3) inset, 0 0 15px rgba(255,183,77,0.3); }
-.shield-bar { display:flex; align-items:center; gap:16px; background: linear-gradient(90deg, var(--panel), var(--panel-2)); border:1px solid var(--line); border-radius:16px; padding:16px 28px; margin-bottom:24px; font-size:15px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); border-left: 4px solid var(--purple); }
-.shield-label { color:white; font-weight:800; letter-spacing: 0.05em; }
-.shield-status { font-weight:900; color: var(--cyan); }
+.shield-bar { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; margin: 20px 0; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+.shield-active { border: 1px solid var(--red); background: rgba(255, 23, 68, 0.1); box-shadow: 0 0 20px rgba(255, 23, 68, 0.3); }
+.shield-label { font-size: 11px; font-weight: 800; color: var(--text); letter-spacing: 0.1em; }
+.shield-active .shield-label { color: var(--red); }
+.shield-status { font-size: 13px; font-weight: 700; color: var(--cyan); }
 .grid { display:grid; gap:24px; }
 .hero-grid  { grid-template-columns: 1fr 1fr 1.2fr; }
 .stat-grid  { grid-template-columns: repeat(4,1fr); margin-top:24px; }

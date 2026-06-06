@@ -494,7 +494,8 @@ class QuantumBotRuntime:
                 ]:
                     if sig:
                         candidates.append(sig)
-            except Exception:
+            except Exception as e:
+                self._log(f"Error procesando {iid}: {e}", "ERROR")
                 continue
 
         for sig in sorted(candidates, key=lambda s: s.score, reverse=True):

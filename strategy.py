@@ -130,51 +130,24 @@ class QuantumTrendStrategy:
     def signal(
         self,
         symbol:  str,
-        df_1h:   pd.DataFrame,
         df_15m:  pd.DataFrame,
         df_5m:   pd.DataFrame,
     ) -> Optional[Signal]:
         if df_15m.empty or df_5m.empty:
             return None
-        if len(df_15m) < 55 or len(df_5m) < 16:
-            return None
-
-        # ── 15M macro bias (EMA 50) ──────────────────────────────────
-        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
-        close_15m = df_15m["close"].iloc[-1]
-        bias = "long" if close_15m > ema50_15m else "short"
-
-        # ── 15M momentum + ADX filter ───────────────────────────────
-        rsi_15m   = _rsi(df_15m["close"]).iloc[-1]
-        adx_15m   = _adx(df_15m).iloc[-1]
-
-        if adx_15m < ADX_MIN:
-            return None  # tendencia demasiado débil
-
-        if bias == "long":
-            if rsi_15m >= RSI_MAX:
-                return None
-        else:
-            if rsi_15m <= RSI_MIN:
-                return None
-
-        # ── 5M FVG sniper (punto medio) ─────────────────────────────
+        
         atr_5m = _atr(df_5m).iloc[-1]
         if atr_5m <= 0:
             return None
-
-        mid = _find_fvg_midpoint(df_5m, bias, lookback=15)
-        if mid is None:
-            return None
-
-        entry = _apply_offset(mid, bias)
-        score = (abs(rsi_15m - 50) / 50) + (min(adx_15m, 50) / 100)
-
+            
+        close_price = df_5m["close"].iloc[-1]
+        entry = Decimal(str(close_price))
+        
         return Signal(
-            symbol=symbol, side=bias, strategy=self.NAME,
+            symbol=symbol, side="long", strategy=self.NAME,
             entry_price=entry, atr_5m=Decimal(str(atr_5m)),
-            reason=f"EMA50 bias={bias} | RSI15m={rsi_15m:.1f} | ADX={adx_15m:.1f} | FVG mid={float(mid):.6f}",
-            score=score,
+            reason="TESTING (NO FILTERS)",
+            score=10.0,
         )
 
 

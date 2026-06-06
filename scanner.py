@@ -179,6 +179,15 @@ class OKXClient:
     async def get_positions(self) -> list[dict]:
         return await self._req("GET", "/api/v5/account/positions?instType=SWAP", auth=True)
 
+    async def get_balance(self) -> float:
+        try:
+            rows = await self._req("GET", "/api/v5/account/balance", auth=True)
+            if rows and "totalEq" in rows[0]:
+                return float(rows[0]["totalEq"])
+        except Exception:
+            pass
+        return 0.0
+
 
 # ──────────────────────────────────────────────
 # Bot Runtime
@@ -203,6 +212,7 @@ class QuantumBotRuntime:
         self._log_buffer:    list[str] = []
         self._instruments:   dict[str, dict] = {}
         self._pending_orders: dict[int, tuple[str, float]] = {}  # trade_id → (ord_id, ts)
+        self.current_exchange_balance: float = 0.0
 
         self.last_scan       = "never"
         self.last_error      = ""
@@ -240,21 +250,55 @@ class QuantumBotRuntime:
         self.running = True
         self._thread = threading.Thread(target=lambda: asyncio.run(self._main()), daemon=True)
         self._thread.start()
-        for msg in [
-            f"[SYSTEM] {self.VERSION} iniciado.",
-            "[SYSTEM] ✔️ Escudo Macro BTC activo – umbral 1.5% vela 5M, bloqueo 3h.",
-            "[SYSTEM] ✔️ Estrategia A: Quantum Trend V10 Pro (EMA50+ADX+FVG).",
-            "[SYSTEM] ✔️ Estrategia B: Quantum Divergence (RSI div + FVG).",
-            "[SYSTEM] ✔️ Early Exit / Breakeven / Trailing activos.",
-            f"[SYSTEM] ✔️ Telegram: {'Activo' if notifier.is_enabled() else 'Desactivado (sin TELEGRAM_TOKEN)'}.",
-        ]:
-            self._log(msg, "SYSTEM")
+        self._log("MOTOR QUANTUM ENCENDIDO")
         return "started"
 
     def stop(self) -> str:
         self.running = False
         self._log("[SYSTEM] Bot detenido manualmente.", "WARN")
         return "stopped"
+
+    async def _close_all_positions(self) -> None:
+        client = self._new_client()
+        try:
+            with get_session() as db:
+                from models import Trade, TradeStatus
+                open_trades = db.query(Trade).filter(
+                    Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+                ).all()
+                for t in open_trades:
+                    try:
+                        self._log(f"[{t.symbol}] 🗑️ HARD RESET: Cerrando posición en OKX a mercado.", "WARN")
+                        await client.close_position(t.symbol, t.side)
+                        await client.cancel_algo_orders(t.symbol)
+                    except Exception as e:
+                        self._log(f"[{t.symbol}] HARD RESET error: {e}", "ERROR")
+        finally:
+            await client.close()
+
+    def reset_database(self) -> str:
+        # First stop the loop so it doesn't open new trades
+        self.stop()
+        # Then forcefully close all active ones in OKX synchronously blocking
+        try:
+            asyncio.run(self._close_all_positions())
+        except Exception as e:
+            self._log(f"Error closing positions: {e}", "ERROR")
+
+        # Now wipe the database completely
+        try:
+            with get_session() as db:
+                from models import Trade, TradeEvent, SystemLog, Cooldown
+                db.query(TradeEvent).delete()
+                db.query(Trade).delete()
+                db.query(SystemLog).delete()
+                db.query(Cooldown).delete()
+                db.commit()
+            self._log("🗑️ BASE DE DATOS Y ESTADÍSTICAS BORRADAS AL 100%.", "SYSTEM")
+        except Exception as e:
+            self._log(f"Error al resetear la base de datos: {e}", "ERROR")
+        
+        return "Reseteo Completado. Puedes Iniciar el Bot de Nuevo."
 
     # ── Main ─────────────────────────────────────────────────────────
 
@@ -559,11 +603,17 @@ class QuantumBotRuntime:
 
     async def _reconcile_loop(self, client: OKXClient) -> None:
         """El Agente Supervisor: vigila continuamente las posiciones activas."""
+        loop_count = 0
         while self.running:
             try:
+                if loop_count % 3 == 0:  # Cada ~9 segundos
+                    bal = await client.get_balance()
+                    if bal > 0:
+                        self.current_exchange_balance = bal
                 await self._reconcile_tick(client)
             except Exception as e:
                 self._log(f"Error en el Agente Supervisor: {e}", "ERROR")
+            loop_count += 1
             await asyncio.sleep(RECONCILE_INTERVAL)
 
     async def _reconcile_tick(self, client: OKXClient) -> None:

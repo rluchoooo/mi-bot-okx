@@ -143,9 +143,13 @@ def build_dashboard() -> str:
     <div class="brand">
       <div class="bolt">Q</div>
       <div>
-        <div class="brand-name">QUANTUM V10 PRO TERMINAL</div>
+        <div class="brand-name">OKX DEMO <span style="font-weight:300;opacity:0.7">|</span> QUANTUM V10 PRO</div>
         <div class="badges"><span>ELITE</span><span>DEMO EXCHANGE</span><span>DUAL STRATEGY</span><span>$8 RISK</span></div>
       </div>
+    </div>
+    <div style="text-align: right; margin-right: 20px;">
+      <div style="font-size:11px; color:var(--text); font-weight:800; letter-spacing:0.05em">SALDO OKX (EQUITY)</div>
+      <div style="font-size:24px; font-weight:900; color:var(--green)">${runtime.current_exchange_balance:,.2f}</div>
     </div>
     <div class="status-pill {status_cls}">{running_badge}</div>
   </div>
@@ -236,35 +240,38 @@ APP_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #06080d; --panel: #0a0d14; --panel-2: #0e1119;
-  --line: rgba(255,255,255,.08); --text: #8892a4;
+  --bg: #030509; --panel: rgba(10, 13, 20, 0.7); --panel-2: rgba(14, 17, 25, 0.8);
+  --line: rgba(255,255,255,.05); --text: #8892a4;
   --green: #00e676; --red: #ff1744; --cyan: #00e5ff;
   --purple: #8f5cff; --muted: #4a5568; --warn: #ffab40;
 }
-body, .gradio-container { background: var(--bg) !important; font-family: 'Inter', sans-serif; color: #e2e8f0; }
-.terminal-shell { max-width: 1440px; margin: 0 auto; padding: 18px; }
-.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
-.brand { display:flex; gap:14px; align-items:center; }
-.bolt { width:44px; height:44px; background:linear-gradient(135deg,var(--purple),var(--cyan)); border-radius:10px; display:grid; place-items:center; font-size:20px; font-weight:900; }
-.brand-name { font-size:20px; font-weight:900; letter-spacing:.05em; }
-.badges { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; }
-.badges span { background:rgba(255,255,255,.07); border:1px solid var(--line); border-radius:4px; padding:2px 7px; font-size:10px; font-weight:700; color:var(--text); }
-.status-pill { padding:8px 18px; border-radius:999px; font-size:12px; font-weight:900; border:1.5px solid; }
-.status-pill.ok   { border-color:var(--green); color:var(--green); }
-.status-pill.warn { border-color:var(--warn);  color:var(--warn);  }
-.shield-bar { display:flex; align-items:center; gap:12px; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:10px 18px; margin-bottom:18px; font-size:12px; }
-.shield-label { color:var(--text); font-weight:700; }
+body, .gradio-container { background: radial-gradient(circle at top, #081020, var(--bg)) !important; font-family: 'Inter', sans-serif; color: #e2e8f0; }
+.terminal-shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
+.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; padding: 16px 24px; background: rgba(255,255,255,0.02); backdrop-filter: blur(12px); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+.brand { display:flex; gap:16px; align-items:center; }
+.bolt { width:48px; height:48px; background:linear-gradient(135deg,var(--purple),var(--cyan)); border-radius:12px; display:grid; place-items:center; font-size:24px; font-weight:900; box-shadow: 0 0 15px rgba(0,229,255,0.3); }
+.brand-name { font-size:22px; font-weight:900; letter-spacing:.05em; text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.badges { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+.badges span { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:6px; padding:3px 8px; font-size:10px; font-weight:700; color:var(--text); text-transform: uppercase; letter-spacing: 0.05em; }
+.status-pill { padding:10px 22px; border-radius:999px; font-size:13px; font-weight:900; border:1.5px solid; letter-spacing: 0.05em; text-transform: uppercase; }
+.status-pill.ok   { border-color:var(--green); color:var(--green); box-shadow: 0 0 15px rgba(0,230,118,0.2) inset, 0 0 10px rgba(0,230,118,0.2); }
+.status-pill.warn { border-color:var(--warn);  color:var(--warn); box-shadow: 0 0 15px rgba(255,171,64,0.2) inset, 0 0 10px rgba(255,171,64,0.2); }
+.shield-bar { display:flex; align-items:center; gap:14px; background:var(--panel-2); backdrop-filter: blur(10px); border:1px solid var(--line); border-radius:12px; padding:12px 22px; margin-bottom:24px; font-size:13px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+.shield-label { color:var(--text); font-weight:800; letter-spacing: 0.05em; }
 .shield-status { font-weight:900; }
-.grid { display:grid; gap:18px; }
+.grid { display:grid; gap:20px; }
 .hero-grid  { grid-template-columns: 1fr 1fr 1.2fr; }
 .stat-grid  { grid-template-columns: repeat(4,1fr); margin-top:18px; }
 .main-grid  { grid-template-columns: 2fr 1fr; margin-top:18px; }
 .lower-grid { grid-template-columns: 1.3fr 1fr; margin-top:18px; }
 .card, .stat-card {
-  background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(255,255,255,.015)), var(--panel);
-  border:1px solid var(--line); border-radius:12px; padding:22px;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)), var(--panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--line); border-radius: 16px; padding: 24px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3); transition: transform 0.2s, box-shadow 0.2s;
 }
-.label, th, small { color:var(--text); font-size:11px; font-weight:800; letter-spacing:.04em; }
+.card:hover, .stat-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.4); border-color: rgba(255,255,255,0.1); }
+.label, th, small { color:var(--text); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform: uppercase; }
 .big { font-size:32px; font-weight:900; margin-top:14px; }
 .sub { color:var(--muted); font-size:12px; margin-top:8px; }
 .mini { margin-top:14px; font-size:12px; font-weight:900; }
@@ -307,12 +314,12 @@ thead { background:var(--panel-2); }
 .trade-card small { color:var(--muted); display:block; margin-top:4px; }
 .empty { color:var(--muted); border:1px dashed var(--line); border-radius:10px; padding:18px; font-size:12px; font-weight:800; }
 .terminal {
-  background:#020305; border-radius:10px; border:1px solid #10151e; padding:14px;
-  min-height:280px; max-height:420px;
-  font-family:"Cascadia Mono",Consolas,monospace; color:#b9ffdf; font-size:11px;
-  line-height:1.7; overflow-y:auto;
+  background: rgba(0,0,0,0.6); border-radius:12px; border:1px solid rgba(255,255,255,0.08); padding:16px;
+  min-height:280px; max-height:420px; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+  font-family:"Cascadia Mono",Consolas,monospace; color:#b9ffdf; font-size:12px;
+  line-height:1.7; overflow-y:auto; backdrop-filter: blur(5px);
 }
-.term-prefix { color:var(--cyan); font-weight:900; }
+.term-prefix { color:var(--cyan); font-weight:900; text-shadow: 0 0 5px rgba(0,229,255,0.5); }
 .strategy-card .kv span { color:var(--muted); font-size:11px; }
 .control-row { display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
 @media (max-width:1100px) {
@@ -334,10 +341,11 @@ thead { background:var(--panel-2); }
 
 with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS) as demo:
     with gr.Row(elem_classes=["control-row"]):
-        start_btn   = gr.Button("▶ Iniciar Bot",  variant="primary")
-        stop_btn    = gr.Button("⏹ Detener")
+        start_btn   = gr.Button("▶️ Iniciar Bot",  variant="primary")
+        stop_btn    = gr.Button("⏹️ Detener")
         refresh_btn = gr.Button("🔄 Actualizar")
-        shield_btn  = gr.Button("🔓 Desbloquear Escudo")
+        shield_btn  = gr.Button("🛡️ Desbloquear Escudo")
+        reset_btn   = gr.Button("🗑️ Resetear Stats", variant="stop")
 
     output = gr.HTML(build_dashboard())
 
@@ -345,6 +353,7 @@ with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS) as demo:
     stop_btn.click(fn=lambda: (runtime.stop(), build_dashboard())[1], outputs=output)
     refresh_btn.click(fn=build_dashboard, outputs=output)
     shield_btn.click(fn=lambda: (runtime.shield.force_clear(), build_dashboard())[1], outputs=output)
+    reset_btn.click(fn=lambda: (runtime.reset_database(), build_dashboard())[1], outputs=output)
 
     if hasattr(gr, "Timer"):
         gr.Timer(8).tick(fn=build_dashboard, outputs=output)

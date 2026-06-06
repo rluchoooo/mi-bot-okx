@@ -489,7 +489,7 @@ class QuantumBotRuntime:
                     client.candles(iid, "5m", 30),
                 )
                 for sig in [
-                    self.trend_strat.signal(iid, df_1h, df_15m, df_5m),
+                    self.trend_strat.signal(iid, df_15m, df_5m),
                     self.div_strat.signal(iid, df_15m, df_5m),
                 ]:
                     if sig:

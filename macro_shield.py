@@ -15,6 +15,7 @@ class MacroShield:
         self._blocked_until:     float = 0.0
         self._last_reminder_at:  float = 0.0
         self._last_trigger_reason: str = ""
+        self.shock_direction: str = ""
 
     @property
     def is_blocked(self) -> bool:
@@ -36,19 +37,20 @@ class MacroShield:
             return f"🔴 BLOQUEADO {mins}m {secs}s – {self._last_trigger_reason}"
         return "🟢 LIBRE – Sin shocks detectados"
 
-    def evaluate(self, btc_high: float, btc_low: float, btc_close: float) -> bool:
+    def evaluate(self, open_px: float, high: float, low: float, close: float) -> bool:
         """
-        Evalúa la vela de 5M de BTC.
-        Retorna True si el escudo se activó (nuevo bloqueo).
+        Evalúa si la vela de BTC supera el umbral de volatilidad.
+        Si lo supera, bloquea el bot por 3 horas y calcula la dirección del shock.
         """
-        if btc_close <= 0:
+        if low <= 0:
             return False
-        volatility = (btc_high - btc_low) / btc_close
-        if volatility > BTC_MAX_VOLATILITY_PCT:
-            self._blocked_until       = time.time() + BTC_BLOCK_SECONDS
-            self._last_reminder_at    = 0.0   # fuerza aviso inmediato
-            pct = volatility * 100
-            self._last_trigger_reason = f"BTC volatilidad {pct:.2f}% > 1.5%"
+        range_pct = (high - low) / low
+        if range_pct >= float(BTC_MAX_VOLATILITY_PCT):
+            self._blocked_until = time.time() + BTC_BLOCK_SECONDS
+            self._last_reminder_at = 0.0
+            self.shock_direction = "bullish" if close > open_px else "bearish"
+            trend_str = "ALCISTA (Pump)" if self.shock_direction == "bullish" else "BAJISTA (Dump)"
+            self._last_trigger_reason = f"Shock de BTC {trend_str} > {float(BTC_MAX_VOLATILITY_PCT)*100:.2f}% ({range_pct*100:.2f}%)"
             return True
         return False
 

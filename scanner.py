@@ -125,12 +125,15 @@ class OKXClient:
             "instId": inst_id, "tdMode": "isolated", "side": side,
             "posSide": pos_side, "ordType": "limit", "sz": str(qty), "px": str(price),
         }
-        if sl:
-            payload["slTriggerPx"] = str(sl)
-            payload["slOrdPx"] = "-1"
-        if tp:
-            payload["tpTriggerPx"] = str(tp)
-            payload["tpOrdPx"] = "-1"
+        if sl or tp:
+            algo_ord = {}
+            if sl:
+                algo_ord["slTriggerPx"] = str(sl)
+                algo_ord["slOrdPx"] = "-1"
+            if tp:
+                algo_ord["tpTriggerPx"] = str(tp)
+                algo_ord["tpOrdPx"] = "-1"
+            payload["attachAlgoOrds"] = [algo_ord]
             
         rows = await self._req("POST", "/api/v5/trade/order", payload, auth=True)
         return rows[0].get("ordId", "") if rows else ""
@@ -512,9 +515,24 @@ class QuantumBotRuntime:
         ct_val = Decimal(inst["ctVal"])
         lot_sz = Decimal(inst["lotSz"])
         min_sz = Decimal(inst["minSz"])
-        sl     = compute_sl(sig.entry_price, sig.side, sig.atr_5m)
-        tp     = compute_tp(sig.entry_price, sig.side, sig.atr_5m)
-        qty    = compute_qty(sig.entry_price, sl, ct_val, lot_sz)
+        tick_sz = Decimal(inst["tickSz"])
+        
+        from decimal import ROUND_HALF_UP
+        
+        def _round_tick(val: Decimal) -> Decimal:
+            return (val / tick_sz).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * tick_sz
+            
+        entry_price = _round_tick(Decimal(str(sig.entry_price)))
+        sl = _round_tick(compute_sl(entry_price, sig.side, sig.atr_5m))
+        tp = _round_tick(compute_tp(entry_price, sig.side, sig.atr_5m))
+        
+        # Ensure SL makes sense for side
+        if sig.side == "long" and sl >= entry_price:
+            sl = entry_price - tick_sz
+        if sig.side == "short" and sl <= entry_price:
+            sl = entry_price + tick_sz
+            
+        qty    = compute_qty(entry_price, sl, ct_val, lot_sz)
         if qty < min_sz:
             self._log(f"{iid}: qty {qty} < min {min_sz}. Skip.")
             return
@@ -531,17 +549,17 @@ class QuantumBotRuntime:
                 else:
                     raise lev_err
                 
-            ord_id = await client.place_limit_order(iid, order_side, qty, sig.entry_price, sl=sl, tp=tp)
+            ord_id = await client.place_limit_order(iid, order_side, qty, entry_price, sl=sl, tp=tp)
             now_ts = time.time()
             with get_session() as db:
                 trade = Trade(
                     symbol=iid, side=TradeSide(sig.side),
                     strategy=Strategy(sig.strategy),
-                    entry_price=float(sig.entry_price), qty=float(qty),
+                    entry_price=float(entry_price), qty=float(qty),
                     sl_price=float(sl), tp_price=float(tp),
                     atr_5m=float(sig.atr_5m), risk_usd=float(FIXED_RISK_USDT),
                     leverage=LEVERAGE, status=TradeStatus.OPEN,
-                    peak_price=float(sig.entry_price),
+                    peak_price=float(entry_price),
                 )
                 db.add(trade)
                 db.flush()

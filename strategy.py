@@ -122,8 +122,7 @@ def _apply_offset(price: Decimal, side: str) -> Decimal:
 
 class QuantumTrendStrategy:
     """
-    1H  → EMA 50 → Bias LONG/SHORT.
-    15M → EMA 50 + RSI + ADX → Filtro de momentum y fuerza.
+    15M → EMA 50 → Bias LONG/SHORT + RSI + ADX → Filtro de momentum y fuerza.
     5M  → FVG midpoint → Entrada con offset 0.02%.
     """
     NAME = "QUANTUM_V10_PRO"
@@ -135,19 +134,17 @@ class QuantumTrendStrategy:
         df_15m:  pd.DataFrame,
         df_5m:   pd.DataFrame,
     ) -> Optional[Signal]:
-        if df_1h.empty or df_15m.empty or df_5m.empty:
+        if df_15m.empty or df_5m.empty:
             return None
-        if len(df_1h) < 55 or len(df_15m) < 55 or len(df_5m) < 16:
+        if len(df_15m) < 55 or len(df_5m) < 16:
             return None
 
-        # ── 1H macro bias (EMA 50) ──────────────────────────────────
-        ema50_1h = _ema(df_1h["close"], EMA_TREND).iloc[-1]
-        close_1h = df_1h["close"].iloc[-1]
-        bias = "long" if close_1h > ema50_1h else "short"
-
-        # ── 15M momentum + ADX filter ───────────────────────────────
+        # ── 15M macro bias (EMA 50) ──────────────────────────────────
         ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
         close_15m = df_15m["close"].iloc[-1]
+        bias = "long" if close_15m > ema50_15m else "short"
+
+        # ── 15M momentum + ADX filter ───────────────────────────────
         rsi_15m   = _rsi(df_15m["close"]).iloc[-1]
         adx_15m   = _adx(df_15m).iloc[-1]
 
@@ -155,10 +152,10 @@ class QuantumTrendStrategy:
             return None  # tendencia demasiado débil
 
         if bias == "long":
-            if not (close_15m > ema50_15m and rsi_15m < RSI_MAX):
+            if rsi_15m >= RSI_MAX:
                 return None
         else:
-            if not (close_15m < ema50_15m and rsi_15m > RSI_MIN):
+            if rsi_15m <= RSI_MIN:
                 return None
 
         # ── 5M FVG sniper (punto medio) ─────────────────────────────

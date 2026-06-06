@@ -88,16 +88,25 @@ def _adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
 
 def _find_fvg_midpoint(df_5m: pd.DataFrame, side: str, lookback: int = 5) -> Optional[Decimal]:
     """
-    Busca un Fair Value Gap (FVG) en las últimas `lookback` velas de 5M.
-    Retorna el PUNTO MEDIO del gap (no el borde) como precio de entrada.
-
-    FVG BULLISH: low[i+2] > high[i]  → midpoint = (high[i] + low[i+2]) / 2
-    FVG BEARISH: high[i+2] < low[i]  → midpoint = (low[i] + high[i+2]) / 2
+    Busca un Fair Value Gap (FVG) en las últimas `lookback` velas de 5M con filtro de volumen.
+    La vela de desplazamiento debe tener un volumen >= 90% de su SMA-10.
     """
-    df = df_5m.tail(lookback + 2).reset_index(drop=True)
+    if len(df_5m) < 15:
+        return None
+    
+    df_vol = df_5m.copy()
+    df_vol["vol_sma10"] = df_vol["volume"].rolling(10).mean()
+    
+    df = df_vol.tail(lookback + 2).reset_index(drop=True)
     for i in range(len(df) - 2):
         left  = df.iloc[i]
+        disp  = df.iloc[i + 1]
         right = df.iloc[i + 2]
+        
+        # Smart Money Order Flow: Displacement candle volume >= 90% of SMA-10
+        if disp["volume"] < 0.9 * disp["vol_sma10"]:
+            continue
+            
         if side == "long" and right["low"] > left["high"]:
             mid = (left["high"] + right["low"]) / 2
             return Decimal(str(round(mid, 8)))
@@ -127,35 +136,40 @@ class QuantumTrendStrategy:
     """
     NAME = "QUANTUM_V10_PRO"
 
+
     def signal(
         self,
         symbol:  str,
+        df_1h:   pd.DataFrame,
         df_15m:  pd.DataFrame,
         df_5m:   pd.DataFrame,
     ) -> Optional[Signal]:
-        if df_15m.empty or df_5m.empty:
+        if df_1h.empty or df_15m.empty or df_5m.empty:
             return None
-        if len(df_15m) < 55 or len(df_5m) < 16:
+        if len(df_1h) < 55 or len(df_15m) < 55 or len(df_5m) < 16:
             return None
 
-        # ── 15M macro bias (EMA 50) ──────────────────────────────────
-        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
-        close_15m = df_15m["close"].iloc[-1]
-        bias = "long" if close_15m > ema50_15m else "short"
+        # ── 1H macro bias (EMA 50) ──────────────────────────────────
+        ema50_1h = _ema(df_1h["close"], EMA_TREND).iloc[-1]
+        close_1h = df_1h["close"].iloc[-1]
+        bias = "long" if close_1h > ema50_1h else "short"
 
         # ── 15M momentum + ADX filter ───────────────────────────────
+        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
+        close_15m = df_15m["close"].iloc[-1]
+        bias_15m = "long" if close_15m > ema50_15m else "short"
+        if bias != bias_15m:
+            return None # 1H and 15M trend must align
+
         rsi_15m   = _rsi(df_15m["close"]).iloc[-1]
         adx_15m   = _adx(df_15m).iloc[-1]
 
         if adx_15m < ADX_MIN:
             return None  # tendencia demasiado débil
 
-        if bias == "long":
-            if rsi_15m >= RSI_MAX:
-                return None
-        else:
-            if rsi_15m <= RSI_MIN:
-                return None
+        # RSI(14) between 35 and 65
+        if not (35 <= rsi_15m <= 65):
+            return None
 
         # ── 5M FVG sniper (punto medio) ─────────────────────────────
         atr_5m = _atr(df_5m).iloc[-1]
@@ -190,15 +204,29 @@ class QuantumDivergenceStrategy:
     NAME   = "QUANTUM_DIVERGENCE"
     WINDOW = 30
 
+
     def signal(
         self,
         symbol: str,
+        df_1h:  pd.DataFrame,
         df_15m: pd.DataFrame,
         df_5m:  pd.DataFrame,
     ) -> Optional[Signal]:
-        if df_15m.empty or df_5m.empty:
+        if df_1h.empty or df_15m.empty or df_5m.empty:
             return None
-        if len(df_15m) < self.WINDOW + 5 or len(df_5m) < 16:
+        if len(df_1h) < 55 or len(df_15m) < max(self.WINDOW + 5, 55) or len(df_5m) < 16:
+            return None
+
+        # ── 1H & 15M Trend Alignment ─────────────────────────────────
+        ema50_1h = _ema(df_1h["close"], EMA_TREND).iloc[-1]
+        close_1h = df_1h["close"].iloc[-1]
+        bias_1h = "long" if close_1h > ema50_1h else "short"
+
+        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
+        close_15m = df_15m["close"].iloc[-1]
+        bias_15m = "long" if close_15m > ema50_15m else "short"
+
+        if bias_1h != bias_15m:
             return None
 
         df = df_15m.tail(self.WINDOW).reset_index(drop=True)

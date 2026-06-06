@@ -166,7 +166,8 @@ class QuantumTrendStrategy:
         if mid is None:
             return None
 
-        entry = _apply_offset(mid, bias)
+        # Enter immediately at current price so the order activates "de una"
+        entry = Decimal(str(df_5m["close"].iloc[-1]))
         score = (abs(rsi_15m - 50) / 50) + (min(adx_15m, 50) / 100)
 
         return Signal(
@@ -244,7 +245,8 @@ class QuantumDivergenceStrategy:
         if mid is None:
             return None
 
-        entry = _apply_offset(mid, side)
+        # Enter immediately at current price so the order activates "de una"
+        entry = Decimal(str(df_5m["close"].iloc[-1]))
         div_label = "Bullish Div" if bullish_div else "Bearish Div"
         score = abs(rsi_now - 50) / 50 + 0.15   # bonus por ser señal de reversión
 

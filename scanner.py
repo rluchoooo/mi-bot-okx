@@ -360,19 +360,44 @@ class QuantumBotRuntime:
             self._log(f"🛑 Límite de pérdida diaria alcanzado: {daily_loss:.2f} USDT. Scanner pausado.", "WARN")
             return
 
-        # Macro shield – BTC 5M
+        # Macro shield – BTC 15M
         try:
-            df_btc = await client.candles("BTC-USDT-SWAP", "5m", limit=3)
+            df_btc = await client.candles("BTC-USDT-SWAP", "15m", limit=3)
             if not df_btc.empty:
                 last = df_btc.iloc[-1]
-                triggered = self.shield.evaluate(float(last["high"]), float(last["low"]), float(last["close"]))
+                triggered = self.shield.evaluate(float(last["open"]), float(last["high"]), float(last["low"]), float(last["close"]))
                 if triggered:
+                    shock_dir = self.shield.shock_direction
                     msg = f"🚨 ALARMA MACRO: {self.shield._last_trigger_reason} – BLOQUEANDO OPERACIONES POR 3 HORAS"
                     self._log(msg, "WARN")
                     await notifier.notify_macro_block(
                         self.shield._last_trigger_reason, self.shield.remaining_minutes
                     )
-        except Exception:
+                    
+                    # Kill Switch
+                    with get_session() as db:
+                        open_trades = db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).all()
+                        for t in open_trades:
+                            if (shock_dir == "bullish" and t.side == "short") or (shock_dir == "bearish" and t.side == "long"):
+                                self._log(f"[{t.symbol}] ⚡ KILL SWITCH: Cerrando {t.side.upper()} en contra del shock {shock_dir.upper()}.", "WARN")
+                                try:
+                                    await client.close_position(t.symbol, t.side)
+                                    t.status = TradeStatus.CLOSED
+                                    t.close_reason = "MACRO_SHOCK_CUT"
+                                    t.closed_at = datetime.now(timezone.utc)
+                                    # Aplicar Cooldown de 30m
+                                    until = datetime.now(timezone.utc) + timedelta(minutes=COOLDOWN_MINUTES)
+                                    ex = db.query(Cooldown).filter(Cooldown.symbol == t.symbol).first()
+                                    if ex:
+                                        ex.until = until
+                                    else:
+                                        db.add(Cooldown(symbol=t.symbol, until=until))
+                                    db.add(TradeEvent(trade_id=t.id, event_type="MACRO_SHOCK_CUT", message=msg))
+                                except Exception as e:
+                                    self._log(f"[{t.symbol}] Error en Kill Switch: {e}", "ERROR")
+                        db.commit()
+
+        except Exception as e:
             pass
 
         # Macro shield reminder every 60s

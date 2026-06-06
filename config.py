@@ -46,7 +46,7 @@ ATR_MULTIPLIER_TP = Decimal("5.0")   # Ratio exacto 1:2
 
 # ── BREAKEVEN ─────────────────────────────────────────────────────────
 BREAKEVEN_ACTIVATION_PCT = Decimal("0.50")
-BREAKEVEN_PROFIT_PCT     = Decimal("0.10")   # 10% del beneficio objetivo asegurado (~$1.60)
+BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # 15% del beneficio objetivo asegurado
 
 # ── TRAILING STOP ─────────────────────────────────────────────────────
 TRAILING_ACTIVATION_PCT = Decimal("0.75")

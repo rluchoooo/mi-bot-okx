@@ -163,7 +163,7 @@ class QuantumTrendStrategy:
         if atr_5m <= 0:
             return None
 
-        mid = _find_fvg_midpoint(df_5m, bias, lookback=5)
+        mid = _find_fvg_midpoint(df_5m, bias, lookback=15)
         if mid is None:
             return None
 
@@ -241,7 +241,7 @@ class QuantumDivergenceStrategy:
         if atr_5m <= 0:
             return None
 
-        mid = _find_fvg_midpoint(df_5m, side, lookback=5)
+        mid = _find_fvg_midpoint(df_5m, side, lookback=15)
         if mid is None:
             return None
 

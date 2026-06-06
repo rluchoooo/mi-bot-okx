@@ -66,7 +66,7 @@ BTC_REMINDER_INTERVAL_SEC = 60       # Log de recordatorio cada 60s mientras blo
 # ── COOLDOWN / ÓRDENES ────────────────────────────────────────────────
 COOLDOWN_MINUTES      = 30
 STALE_ORDER_MINUTES   = 10
-RECONCILE_INTERVAL    = 30
+RECONCILE_INTERVAL    = 3
 RECONCILE_RETRY_SEC   = 10           # Espera entre reintentos en reconcile
 
 # ── TELEGRAM ─────────────────────────────────────────────────────────

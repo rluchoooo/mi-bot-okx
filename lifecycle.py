@@ -111,6 +111,16 @@ def evaluate(
             ))
             return decisions
 
+    # ── MAX LOSS (Asfixia) ──────────────────────────────────────────
+    from config import MAX_ABSOLUTE_LOSS
+    if unrealized < MAX_ABSOLUTE_LOSS:
+        decisions.append(LifecycleDecision(
+            action=Action.CLOSE_MARKET,
+            reason="MAX_LOSS_ASFIXIA",
+            log_message=f"💀 Asfixia (Pérdida Crítica): PnL={unrealized:.2f} USDT < {MAX_ABSOLUTE_LOSS}. Cierre IOC inmediato.",
+        ))
+        return decisions
+
     # ── 1. Trailing stop hit ────────────────────────────────────────
     if trail_activated and trail_sl is not None:
         hit = (price <= trail_sl) if side == "long" else (price >= trail_sl)
@@ -124,7 +134,7 @@ def evaluate(
 
     # ── 2. Trailing seguimiento ─────────────────────────────────────
     if trail_activated and trail_sl is not None:
-        updated = new_trail_sl(price, side, tp_dist, trail_sl)
+        updated = new_trail_sl(price, side, atr_5m, trail_sl)
         if updated != trail_sl:
             decisions.append(LifecycleDecision(
                 action=Action.MOVE_SL,
@@ -135,7 +145,7 @@ def evaluate(
 
     # ── 3. Activar Trailing (75%) ───────────────────────────────────
     if not trail_activated and progress >= TRAILING_ACTIVATION_PCT:
-        init_sl = new_trail_sl(price, side, tp_dist, current_sl)
+        init_sl = new_trail_sl(price, side, atr_5m, current_sl)
         decisions.append(LifecycleDecision(
             action=Action.MOVE_SL,
             reason="TRAIL_ACTIVATE",

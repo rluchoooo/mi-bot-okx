@@ -91,6 +91,26 @@ def evaluate(
     else:
         progress = (entry - price) / tp_dist if tp_dist > 0 else Decimal("0")
 
+    # ── 0. Stop Loss / Take Profit inicial Hit ──────────────────────
+    sl_hit = (price <= current_sl) if side == "long" else (price >= current_sl)
+    if sl_hit:
+        decisions.append(LifecycleDecision(
+            action=Action.CLOSE_MARKET,
+            reason="STOP_LOSS_HIT",
+            log_message=f"🛑 Stop Loss alcanzado: precio={price:.6f} sl={current_sl:.6f}",
+        ))
+        return decisions
+
+    if tp is not None:
+        tp_hit = (price >= tp) if side == "long" else (price <= tp)
+        if tp_hit:
+            decisions.append(LifecycleDecision(
+                action=Action.CLOSE_MARKET,
+                reason="TAKE_PROFIT_HIT",
+                log_message=f"✅ Take Profit alcanzado: precio={price:.6f} tp={tp:.6f}",
+            ))
+            return decisions
+
     # ── 1. Trailing stop hit ────────────────────────────────────────
     if trail_activated and trail_sl is not None:
         hit = (price <= trail_sl) if side == "long" else (price >= trail_sl)

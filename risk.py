@@ -1,35 +1,38 @@
 """
 risk.py – Calculadora de tamaño de posición y niveles de SL/TP.
-Riesgo fijo: $8 USDT por operación con apalancamiento 10x.
+Riesgo fijo: $8 USDT por operación con apalancamiento 10x (config.py).
 """
 from __future__ import annotations
 
 from decimal import ROUND_DOWN, Decimal
 
+from config import (
+    ATR_MULTIPLIER_SL, ATR_MULTIPLIER_TP,
+    BREAKEVEN_ACTIVATION_PCT, BREAKEVEN_PROFIT_PCT,
+    EARLY_EXIT_SL_PCT,
+    FIXED_RISK_USDT,
+    LEVERAGE,
+    TRAILING_ACTIVATION_PCT, TRAILING_DISTANCE_PCT,
+)
 
-RISK_USD: Decimal = Decimal("8.0")
-LEVERAGE: int = 10
-ATR_SL_MULT: Decimal = Decimal("2.5")
-ATR_TP_MULT: Decimal = Decimal("5.0")
-
-# Lifecycle thresholds
-BE_TRIGGER_PCT: Decimal = Decimal("0.50")    # 50% toward TP activates breakeven
-TRAIL_TRIGGER_PCT: Decimal = Decimal("0.75") # 75% toward TP activates trailing
-TRAIL_DISTANCE_PCT: Decimal = Decimal("0.15") # trailing correa = 15% of TP distance
-BE_LOCK_USD: Decimal = Decimal("1.6")        # $1.60 guaranteed after breakeven
-EARLY_EXIT_PCT: Decimal = Decimal("-0.40")   # -40% of risk = -$3.20 triggers early exit
-MIN_GUARANTEED_PCT: Decimal = Decimal("0.60") # 60% of TP on trailing = $9.60 min
+# Re-export for backward compatibility
+RISK_USD          = FIXED_RISK_USDT
+BE_TRIGGER_PCT    = BREAKEVEN_ACTIVATION_PCT
+TRAIL_TRIGGER_PCT = TRAILING_ACTIVATION_PCT
+TRAIL_DISTANCE_PCT = TRAILING_DISTANCE_PCT
+EARLY_EXIT_PCT    = -EARLY_EXIT_SL_PCT          # negative: represents a loss threshold
+BE_LOCK_PCT       = BREAKEVEN_PROFIT_PCT
 
 
 def compute_sl(entry: Decimal, side: str, atr: Decimal) -> Decimal:
     """Stop Loss = entry ± 2.5 × ATR."""
-    distance = ATR_SL_MULT * atr
+    distance = ATR_MULTIPLIER_SL * atr
     return entry - distance if side == "long" else entry + distance
 
 
 def compute_tp(entry: Decimal, side: str, atr: Decimal) -> Decimal:
-    """Take Profit = entry ± 5.0 × ATR (1:2 R/R)."""
-    distance = ATR_TP_MULT * atr
+    """Take Profit = entry ± 5.0 × ATR (ratio 1:2)."""
+    distance = ATR_MULTIPLIER_TP * atr
     return entry + distance if side == "long" else entry - distance
 
 
@@ -38,12 +41,11 @@ def compute_qty(
     sl: Decimal,
     ct_val: Decimal,
     lot_sz: Decimal,
-    risk_usd: Decimal = RISK_USD,
+    risk_usd: Decimal = FIXED_RISK_USDT,
 ) -> Decimal:
     """
-    Calcula el tamaño exacto en contratos.
-    qty = risk_usd / |entry - sl| / ct_val
-    Redondea hacia abajo al lot_sz del instrumento.
+    qty = risk_usd / (|entry - sl| × ct_val)
+    Redondeado hacia abajo al lot_sz del instrumento.
     """
     sl_distance = abs(entry - sl)
     if sl_distance == 0:
@@ -52,14 +54,18 @@ def compute_qty(
     return qty_raw.quantize(lot_sz, rounding=ROUND_DOWN)
 
 
-def breakeven_sl(entry: Decimal, side: str) -> Decimal:
-    """SL de breakeven = entrada + $1.60 / entrada - $1.60."""
-    return entry + BE_LOCK_USD if side == "long" else entry - BE_LOCK_USD
+def breakeven_sl(entry: Decimal, side: str, tp_dist: Decimal) -> Decimal:
+    """
+    SL de breakeven = entrada + (BREAKEVEN_PROFIT_PCT × tp_dist).
+    Asegura un 10% del beneficio objetivo.
+    """
+    lock = BREAKEVEN_PROFIT_PCT * tp_dist
+    return entry + lock if side == "long" else entry - lock
 
 
-def trail_distance(tp_distance: Decimal) -> Decimal:
+def trail_distance(tp_dist: Decimal) -> Decimal:
     """Correa del trailing stop = 15% de la distancia total al TP."""
-    return TRAIL_DISTANCE_PCT * tp_distance
+    return TRAILING_DISTANCE_PCT * tp_dist
 
 
 def new_trail_sl(
@@ -69,16 +75,11 @@ def new_trail_sl(
     current_sl: Decimal,
 ) -> Decimal:
     """
-    Calcula el nuevo trailing stop.
-    Para LONG: sube si el precio sube.
-    Para SHORT: baja si el precio baja.
-    Nunca retrocede (monotone).
+    Nuevo trailing stop siguiendo el precio (nunca retrocede).
     """
-    dist = trail_distance(tp_dist)
+    dist      = trail_distance(tp_dist)
     candidate = price - dist if side == "long" else price + dist
-    if side == "long":
-        return max(candidate, current_sl)
-    return min(candidate, current_sl)
+    return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
 
 
 def pnl_usd(
@@ -93,8 +94,8 @@ def pnl_usd(
     return raw if side == "long" else -raw
 
 
-def pnl_pct_of_risk(unrealized_pnl: Decimal, risk_usd: Decimal = RISK_USD) -> Decimal:
-    """Retorna el PnL como fracción del riesgo máximo."""
+def pnl_pct_of_risk(unrealized_pnl: Decimal, risk_usd: Decimal = FIXED_RISK_USDT) -> Decimal:
+    """PnL como fracción del riesgo máximo."""
     if risk_usd == 0:
         return Decimal("0")
     return unrealized_pnl / risk_usd

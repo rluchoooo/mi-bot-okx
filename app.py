@@ -246,8 +246,8 @@ APP_CSS = """
   --green: #00ff88; --red: #ff2a55; --cyan: #00e5ff;
   --purple: #a67cff; --muted: #64748b; --warn: #ffb74d;
 }
-body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit', sans-serif; color: var(--text); }
-.terminal-shell { max-width: 1440px; margin: 0 auto; padding: 24px; }
+body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit', sans-serif; color: var(--text); max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
+.terminal-shell { max-width: 100%; margin: 0 auto; padding: 24px 48px; }
 .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; padding: 20px 30px; background: linear-gradient(90deg, rgba(14,17,31,0.9), rgba(20,25,46,0.9)); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-bottom: 3px solid var(--cyan); }
 .brand { display:flex; gap:20px; align-items:center; }
 .bolt { width:56px; height:56px; background:linear-gradient(135deg,var(--purple),var(--cyan)); border-radius:16px; display:grid; place-items:center; font-size:28px; font-weight:900; color: white; box-shadow: 0 0 20px rgba(0,229,255,0.4); }
@@ -352,7 +352,7 @@ thead { background:rgba(255,255,255,0.03); }
 # Gradio App
 # ──────────────────────────────────────────────────────────────────────
 
-with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS) as demo:
+with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS, fill_width=True) as demo:
     with gr.Row(elem_classes=["control-row"]):
         start_btn   = gr.Button("▶️ Iniciar Bot",  variant="primary")
         stop_btn    = gr.Button("⏹️ Detener")

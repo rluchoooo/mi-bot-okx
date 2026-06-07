@@ -167,8 +167,8 @@ class QuantumTrendStrategy:
         if adx_15m < ADX_MIN:
             return None  # tendencia demasiado débil
 
-        # RSI(14) between 35 and 65
-        if not (35 <= rsi_15m <= 65):
+        # RSI(14) between 30 and 72 (slightly loosened to capture emerging momentum)
+        if not (30 <= rsi_15m <= 72):
             return None
 
         # ── 5M FVG sniper (punto medio) ─────────────────────────────

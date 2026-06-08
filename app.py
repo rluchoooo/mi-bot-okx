@@ -108,28 +108,29 @@ def build_dashboard() -> str:
     if not pos_rows:
         pos_rows = "<tr><td colspan='7' class='muted center'>Sin posiciones abiertas. Escaneando mercado...</td></tr>"
 
-    # ── Closed trade cards ──
-    trade_cards = ""
+    # ── Closed trade rows ──
+    trade_rows = ""
     for t in closed_trades:
         pnl   = t.realized_pnl or 0
         sym   = _esc(t.symbol.replace("-USDT-SWAP", "USDT"))
         side_cls = "pos" if (t.side.value if hasattr(t.side, "value") else t.side) == "long" else "neg"
+        side_lbl = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sign  = "+" if pnl >= 0 else ""
         reason = _esc((t.close_reason or "").upper())
         strat  = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), "?")
-        trade_cards += f"""
-<div class="trade-card">
-  <div class="coin">{sym[:2]}</div>
-  <div>
-    <strong>{sym} <span class="{side_cls}">{(t.side.value if hasattr(t.side,'value') else t.side).upper()}</span> <span class="tag">{strat}</span></strong>
-    <small>E {_fmt(t.entry_price)} → S {_fmt(t.close_price or 0)}</small>
-  </div>
-  <div><small>CIERRE</small><strong>{reason}</strong></div>
-  <b class="{_pnl_cls(pnl)}">{sign}{pnl:.2f} USDT</b>
-</div>"""
+        trade_rows += f"""
+<tr>
+  <td>{sym}</td>
+  <td class="{side_cls}">{side_lbl}</td>
+  <td><span class="tag tag-strat">{strat}</span></td>
+  <td>{_fmt(t.entry_price)}</td>
+  <td>{_fmt(t.close_price or 0)}</td>
+  <td><strong>{reason}</strong></td>
+  <td class="{_pnl_cls(pnl)}"><b>{sign}{pnl:.2f} USDT</b></td>
+</tr>"""
 
-    if not trade_cards:
-        trade_cards = "<div class='empty'>Sin operaciones cerradas desde este arranque.</div>"
+    if not trade_rows:
+        trade_rows = "<tr><td colspan='7' class='muted center'>Sin operaciones cerradas desde este arranque.</td></tr>"
 
     # ── Terminal lines ──
     terminal = "".join(
@@ -221,7 +222,10 @@ def build_dashboard() -> str:
   <div class="grid lower-grid">
     <section class="card history-card">
       <div class="section-head"><span>HISTORIAL DE TRADES</span></div>
-      <div class="trade-list">{trade_cards}</div>
+      <table>
+        <thead><tr><th>SÍMBOLO</th><th>LADO</th><th>ESTRATEGIA</th><th>ENTRADA</th><th>SALIDA</th><th>CAUSA DE CIERRE</th><th>PNL</th></tr></thead>
+        <tbody>{trade_rows}</tbody>
+      </table>
     </section>
     <section class="card terminal-card">
       <div class="section-head"><span>TERMINAL DE EJECUCIÓN</span></div>

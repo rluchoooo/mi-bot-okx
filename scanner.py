@@ -37,7 +37,7 @@ from risk import (
     breakeven_sl, compute_qty, compute_sl, compute_tp,
     new_trail_sl, pnl_usd,
 )
-from strategy import QuantumDivergenceStrategy, QuantumTrendStrategy, Signal
+from strategy import QuantumSMCStrategy, SupertrendPullbackStrategy, Signal
 
 
 # ──────────────────────────────────────────────
@@ -181,12 +181,23 @@ class OKXClient:
             pass
 
 
-    async def place_market_order(self, inst_id: str, side: str, qty: Decimal) -> str:
+    async def place_market_order(self, inst_id: str, side: str, qty: Decimal, sl: Decimal = None, tp: Decimal = None) -> str:
         pos_side = "long" if side == "buy" else "short"
-        rows = await self._req("POST", "/api/v5/trade/order", {
+        payload = {
             "instId": inst_id, "tdMode": "isolated", "side": side,
             "posSide": pos_side, "ordType": "market", "sz": str(qty),
-        }, auth=True)
+        }
+        if sl or tp:
+            algo_ord = {}
+            if sl:
+                algo_ord["slTriggerPx"] = str(sl)
+                algo_ord["slOrdPx"] = "-1"
+            if tp:
+                algo_ord["tpTriggerPx"] = str(tp)
+                algo_ord["tpOrdPx"] = "-1"
+            payload["attachAlgoOrds"] = [algo_ord]
+            
+        rows = await self._req("POST", "/api/v5/trade/order", payload, auth=True)
         return rows[0].get("ordId", "") if rows else ""
 
     async def cancel_order(self, inst_id: str, ord_id: str) -> None:
@@ -238,8 +249,8 @@ class QuantumBotRuntime:
         self.simulated  = simulated
 
         self.shield          = MacroShield()
-        self.trend_strat     = QuantumTrendStrategy()
-        self.div_strat       = QuantumDivergenceStrategy()
+        self.trend_strat     = QuantumSMCStrategy()
+        self.div_strat       = SupertrendPullbackStrategy()
 
         self.running         = False
         self._lock           = threading.Lock()
@@ -551,8 +562,12 @@ class QuantumBotRuntime:
             return (val / tick_sz).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * tick_sz
             
         entry_price = _round_tick(Decimal(str(sig.entry_price)))
-        sl = _round_tick(compute_sl(entry_price, sig.side, sig.atr_5m))
-        tp = _round_tick(compute_tp(entry_price, sig.side, sig.atr_5m))
+        if sig.sl_price is not None:
+            sl = _round_tick(Decimal(str(sig.sl_price)))
+        else:
+            sl = _round_tick(compute_sl(entry_price, sig.side, sig.atr_5m))
+            
+        tp = _round_tick(compute_tp(entry_price, sl, sig.side))
         
         # Ensure SL makes sense for side
         if sig.side == "long" and sl >= entry_price:
@@ -577,7 +592,10 @@ class QuantumBotRuntime:
                 else:
                     raise lev_err
                 
-            ord_id = await client.place_limit_order(iid, order_side, qty, entry_price, sl=sl, tp=tp)
+            if sig.order_type == "market":
+                ord_id = await client.place_market_order(iid, order_side, qty, sl=sl, tp=tp)
+            else:
+                ord_id = await client.place_limit_order(iid, order_side, qty, entry_price, sl=sl, tp=tp)
             now_ts = time.time()
             with get_session() as db:
                 trade = Trade(

@@ -229,7 +229,7 @@ class SupertrendPullbackStrategy:
         ema50 = _ema(df_5m["close"], EMA_TREND)
         
         adx = _adx(df_5m, ADX_PERIOD)
-        rsi = _rsi(df_5m, RSI_PERIOD)
+        rsi = _rsi(df_5m["close"], RSI_PERIOD)
         st_df = _supertrend(df_5m, SUPERTREND_PERIOD, SUPERTREND_FACTOR)
         
         current = df_5m.iloc[-1]

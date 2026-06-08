@@ -1,7 +1,7 @@
 """
-strategy.py – Motor Dual de Señales: Quantum Trend V10 Pro + Quantum Divergence.
-Usa EMA50 para el bias macro, ADX≥20 para filtro de tendencia,
-FVG con entrada en el PUNTO MEDIO del gap, y divergencia con min 2pts RSI.
+strategy.py – Motor de Señales
+A: Quantum SMC V10 PRO (Limit Orders)
+B: Supertrend Pullback V3 (Market Orders)
 """
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ import pandas as pd
 
 from config import (
     ADX_MIN, ADX_PERIOD, ATR_PERIOD,
-    EMA_FAST, EMA_MID, EMA_SLOW, EMA_TREND,
-    LIMIT_ORDER_OFFSET_PCT,
-    RSI_DIV_MIN_DIFF, RSI_MAX, RSI_MIN, RSI_PERIOD,
+    EMA_FAST, EMA_MID, EMA_TREND,
+    RSI_PERIOD,
+    SUPERTREND_FACTOR, SUPERTREND_PERIOD
 )
 
 
@@ -28,8 +28,10 @@ from config import (
 class Signal:
     symbol:      str
     side:        str          # "long" | "short"
-    strategy:    str          # "QUANTUM_V10_PRO" | "QUANTUM_DIVERGENCE"
-    entry_price: Decimal      # limit order price with offset
+    strategy:    str          # "QUANTUM_SMC_V10_PRO" | "SUPERTREND_PULLBACK_V3"
+    order_type:  str          # "limit" | "market"
+    entry_price: Decimal      # price to enter at
+    sl_price:    Optional[Decimal] = None # Exact SL for strategy B
     atr_5m:      Decimal
     reason:      str
     score:       float = 0.0
@@ -65,7 +67,6 @@ def _atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
 
 
 def _adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
-    """Calcula ADX para filtrar tendencias débiles."""
     prev_close = df["close"].shift(1)
     tr = pd.concat([
         df["high"] - df["low"],
@@ -86,56 +87,61 @@ def _adx(df: pd.DataFrame, period: int = ADX_PERIOD) -> pd.Series:
     return dx.ewm(alpha=1 / period, adjust=False).mean().fillna(0)
 
 
-def _find_fvg_midpoint(df_5m: pd.DataFrame, side: str, lookback: int = 5) -> Optional[Decimal]:
-    """
-    Busca un Fair Value Gap (FVG) en las últimas `lookback` velas de 5M con filtro de volumen.
-    La vela de desplazamiento debe tener un volumen >= 90% de su SMA-10.
-    """
-    if len(df_5m) < 15:
-        return None
+def _supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.DataFrame:
+    atr = _atr(df, period)
+    hl2 = (df["high"] + df["low"]) / 2
+    basic_ub = hl2 + (multiplier * atr)
+    basic_lb = hl2 - (multiplier * atr)
+
+    supertrend = np.zeros(len(df))
+    direction = np.ones(len(df))
+    final_ub = np.zeros(len(df))
+    final_lb = np.zeros(len(df))
     
-    df_vol = df_5m.copy()
-    df_vol["vol_sma10"] = df_vol["volume"].rolling(10).mean()
+    close = df["close"].values
     
-    df = df_vol.tail(lookback + 2).reset_index(drop=True)
-    for i in range(len(df) - 2):
-        left  = df.iloc[i]
-        disp  = df.iloc[i + 1]
-        right = df.iloc[i + 2]
-        
-        # Smart Money Order Flow: Displacement candle volume >= 90% of SMA-10
-        if disp["volume"] < 0.9 * disp["vol_sma10"]:
-            continue
+    final_ub[0] = basic_ub.iloc[0]
+    final_lb[0] = basic_lb.iloc[0]
+    
+    for i in range(1, len(df)):
+        if basic_ub.iloc[i] < final_ub[i-1] or close[i-1] > final_ub[i-1]:
+            final_ub[i] = basic_ub.iloc[i]
+        else:
+            final_ub[i] = final_ub[i-1]
             
-        if side == "long" and right["low"] > left["high"]:
-            mid = (left["high"] + right["low"]) / 2
-            return Decimal(str(round(mid, 8)))
-        if side == "short" and right["high"] < left["low"]:
-            mid = (left["low"] + right["high"]) / 2
-            return Decimal(str(round(mid, 8)))
-    return None
-
-
-def _apply_offset(price: Decimal, side: str) -> Decimal:
-    """
-    Aplica un offset del 0.02% al precio límite para asegurar el fill.
-    LONG: sube ligeramente para cruzar asks. SHORT: baja ligeramente.
-    """
-    offset = price * LIMIT_ORDER_OFFSET_PCT
-    return price + offset if side == "long" else price - offset
+        if basic_lb.iloc[i] > final_lb[i-1] or close[i-1] < final_lb[i-1]:
+            final_lb[i] = basic_lb.iloc[i]
+        else:
+            final_lb[i] = final_lb[i-1]
+            
+        if supertrend[i-1] == final_ub[i-1] and close[i] <= final_ub[i]:
+            direction[i] = -1
+        elif supertrend[i-1] == final_ub[i-1] and close[i] > final_ub[i]:
+            direction[i] = 1
+        elif supertrend[i-1] == final_lb[i-1] and close[i] >= final_lb[i]:
+            direction[i] = 1
+        elif supertrend[i-1] == final_lb[i-1] and close[i] < final_lb[i]:
+            direction[i] = -1
+        else:
+            direction[i] = direction[i-1]
+            
+        if direction[i] == 1:
+            supertrend[i] = final_lb[i]
+        else:
+            supertrend[i] = final_ub[i]
+            
+    return pd.DataFrame({
+        "supertrend": supertrend,
+        "direction": direction
+    }, index=df.index)
 
 
 # ──────────────────────────────────────────────
-# Strategy A: QUANTUM_V10_PRO (Trend + FVG)
+# Strategy A: QUANTUM_SMC_V10_PRO (FVG + Sweep)
 # ──────────────────────────────────────────────
 
-class QuantumTrendStrategy:
-    """
-    15M → EMA 50 → Bias LONG/SHORT + RSI + ADX → Filtro de momentum y fuerza.
-    5M  → FVG midpoint → Entrada con offset 0.02%.
-    """
-    NAME = "QUANTUM_V10_PRO"
-
+class QuantumSMCStrategy:
+    NAME = "QUANTUM_SMC_V10_PRO"
 
     def signal(
         self,
@@ -144,145 +150,126 @@ class QuantumTrendStrategy:
         df_15m:  pd.DataFrame,
         df_5m:   pd.DataFrame,
     ) -> Optional[Signal]:
-        if df_1h.empty or df_15m.empty or df_5m.empty:
-            return None
-        if len(df_1h) < 55 or len(df_15m) < 55 or len(df_5m) < 16:
+        if len(df_5m) < 35:
             return None
 
-        # ── 1H macro bias (EMA 50) ──────────────────────────────────
-        ema50_1h = _ema(df_1h["close"], EMA_TREND).iloc[-1]
-        close_1h = df_1h["close"].iloc[-1]
-        bias = "long" if close_1h > ema50_1h else "short"
-
-        # ── 15M momentum + ADX filter ───────────────────────────────
-        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
-        close_15m = df_15m["close"].iloc[-1]
-        bias_15m = "long" if close_15m > ema50_15m else "short"
-        if bias != bias_15m:
-            return None # 1H and 15M trend must align
-
-        rsi_15m   = _rsi(df_15m["close"]).iloc[-1]
-        adx_15m   = _adx(df_15m).iloc[-1]
-
-        if adx_15m < ADX_MIN:
-            return None  # tendencia demasiado débil
-
-        # RSI(14) between 30 and 72 (slightly loosened to capture emerging momentum)
-        if not (30 <= rsi_15m <= 72):
+        # Calculate volume SMA 15
+        vol_sma = df_5m["volume"].rolling(15).mean()
+        atr = _atr(df_5m, ATR_PERIOD)
+        
+        # Check the last pattern (v1, v2, v3) -> indexes -3, -2, -1
+        # V1: -3, V2: -2, V3: -1
+        v1 = df_5m.iloc[-3]
+        v2 = df_5m.iloc[-2]
+        v3 = df_5m.iloc[-1]
+        
+        vol_3_sma = vol_sma.iloc[-1]
+        if v3["volume"] <= 1.25 * vol_3_sma:
             return None
-
-        # ── 5M FVG sniper (punto medio) ─────────────────────────────
-        atr_5m = _atr(df_5m).iloc[-1]
-        if atr_5m <= 0:
-            return None
-
-        mid = _find_fvg_midpoint(df_5m, bias, lookback=15)
-        if mid is None:
-            return None
-
-        # Enter immediately at current price with offset so the order activates "de una"
-        entry_raw = Decimal(str(df_5m["close"].iloc[-1]))
-        entry = _apply_offset(entry_raw, bias)
-        score = (abs(rsi_15m - 50) / 50) + (min(adx_15m, 50) / 100)
-
-        return Signal(
-            symbol=symbol, side=bias, strategy=self.NAME,
-            entry_price=entry, atr_5m=Decimal(str(atr_5m)),
-            reason=f"EMA50 bias={bias} | RSI15m={rsi_15m:.1f} | ADX={adx_15m:.1f} | FVG mid={float(mid):.6f}",
-            score=score,
-        )
+            
+        atr_val = Decimal(str(atr.iloc[-1]))
+            
+        # Swing Low of last 15 candles before the pattern (indexes -18 to -4)
+        history_window = df_5m.iloc[-18:-3]
+        swing_low = history_window["low"].min()
+        swing_high = history_window["high"].max()
+        
+        # LONG check
+        # V3 must be green (Close > Open)
+        if v3["close"] > v3["open"]:
+            # FVG Check: V2 Low > V1 High
+            if v2["low"] > v1["high"]:
+                # Sweep check: V1 or V3 low broke the swing_low
+                if v1["low"] < swing_low or v3["low"] < swing_low:
+                    entry = Decimal(str((v2["low"] + v1["high"]) / 2))
+                    return Signal(
+                        symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
+                        entry_price=entry, atr_5m=atr_val,
+                        reason=f"SMC FVG Long | Vol={v3['volume']:.0f} > SMA({vol_3_sma:.0f})",
+                        score=1.0
+                    )
+                    
+        # SHORT check
+        # V3 must be red (Close < Open)
+        if v3["close"] < v3["open"]:
+            # FVG Check: V2 High < V1 Low
+            if v2["high"] < v1["low"]:
+                # Sweep check: V1 or V3 high broke the swing_high
+                if v1["high"] > swing_high or v3["high"] > swing_high:
+                    entry = Decimal(str((v2["high"] + v1["low"]) / 2))
+                    return Signal(
+                        symbol=symbol, side="short", strategy=self.NAME, order_type="limit",
+                        entry_price=entry, atr_5m=atr_val,
+                        reason=f"SMC FVG Short | Vol={v3['volume']:.0f} > SMA({vol_3_sma:.0f})",
+                        score=1.0
+                    )
+        
+        return None
 
 
 # ──────────────────────────────────────────────
-# Strategy B: QUANTUM_DIVERGENCE (RSI Divergence + FVG)
+# Strategy B: SUPERTREND_PULLBACK_V3
 # ──────────────────────────────────────────────
 
-class QuantumDivergenceStrategy:
-    """
-    15M → Divergencia RSI/Precio en ventana de 30 velas (mínimo 2pts RSI).
-    5M  → FVG confirmador (punto medio + offset 0.02%).
-    """
-    NAME   = "QUANTUM_DIVERGENCE"
-    WINDOW = 30
-
+class SupertrendPullbackStrategy:
+    NAME = "SUPERTREND_PULLBACK_V3"
 
     def signal(
         self,
-        symbol: str,
-        df_1h:  pd.DataFrame,
-        df_15m: pd.DataFrame,
-        df_5m:  pd.DataFrame,
+        symbol:  str,
+        df_1h:   pd.DataFrame,
+        df_15m:  pd.DataFrame,
+        df_5m:   pd.DataFrame,
     ) -> Optional[Signal]:
-        if df_1h.empty or df_15m.empty or df_5m.empty:
-            return None
-        if len(df_1h) < 55 or len(df_15m) < max(self.WINDOW + 5, 55) or len(df_5m) < 16:
+        if len(df_5m) < 55:
             return None
 
-        # ── 1H & 15M Trend Alignment ─────────────────────────────────
-        ema50_1h = _ema(df_1h["close"], EMA_TREND).iloc[-1]
-        close_1h = df_1h["close"].iloc[-1]
-        bias_1h = "long" if close_1h > ema50_1h else "short"
-
-        ema50_15m = _ema(df_15m["close"], EMA_TREND).iloc[-1]
-        close_15m = df_15m["close"].iloc[-1]
-        bias_15m = "long" if close_15m > ema50_15m else "short"
-
-        if bias_1h != bias_15m:
+        ema9 = _ema(df_5m["close"], EMA_FAST)
+        ema21 = _ema(df_5m["close"], EMA_MID)
+        ema50 = _ema(df_5m["close"], EMA_TREND)
+        
+        adx = _adx(df_5m, ADX_PERIOD)
+        rsi = _rsi(df_5m, RSI_PERIOD)
+        st_df = _supertrend(df_5m, SUPERTREND_PERIOD, SUPERTREND_FACTOR)
+        
+        current = df_5m.iloc[-1]
+        c_ema9 = ema9.iloc[-1]
+        c_ema21 = ema21.iloc[-1]
+        c_ema50 = ema50.iloc[-1]
+        c_adx = adx.iloc[-1]
+        c_rsi = rsi.iloc[-1]
+        c_st = st_df["supertrend"].iloc[-1]
+        c_st_dir = st_df["direction"].iloc[-1]
+        
+        atr_val = Decimal(str(_atr(df_5m, ATR_PERIOD).iloc[-1]))
+        
+        if c_adx <= 20:
             return None
-
-        df = df_15m.tail(self.WINDOW).reset_index(drop=True)
-        df["rsi"] = _rsi(df["close"])
-
-        rsi_now  = float(df["rsi"].iloc[-1])
-        price_now_low  = float(df["low"].iloc[-1])
-        price_now_high = float(df["high"].iloc[-1])
-
-        bullish_div = False
-        bearish_div = False
-
-        # ── Bullish: precio hace LL, RSI hace HL, RSI < 40 ──────────
-        if rsi_now < 40:
-            prev_low_idx = df["low"].iloc[:-3].idxmin()
-            prev_rsi_at_low = float(df["rsi"].iloc[prev_low_idx])
-            prev_price_low  = float(df["low"].iloc[prev_low_idx])
-            rsi_diff = rsi_now - prev_rsi_at_low
-            if (price_now_low < prev_price_low        # precio hace LL
-                    and rsi_diff >= RSI_DIV_MIN_DIFF):  # RSI hace HL con ≥2pts
-                bullish_div = True
-
-        # ── Bearish: precio hace HH, RSI hace LH, RSI > 60 ─────────
-        if rsi_now > 60:
-            prev_high_idx = df["high"].iloc[:-3].idxmax()
-            prev_rsi_at_high = float(df["rsi"].iloc[prev_high_idx])
-            prev_price_high  = float(df["high"].iloc[prev_high_idx])
-            rsi_diff = prev_rsi_at_high - rsi_now
-            if (price_now_high > prev_price_high      # precio hace HH
-                    and rsi_diff >= RSI_DIV_MIN_DIFF):  # RSI hace LH con ≥2pts
-                bearish_div = True
-
-        if not bullish_div and not bearish_div:
-            return None
-
-        side = "long" if bullish_div else "short"
-
-        # ── 5M FVG confirmador ───────────────────────────────────────
-        atr_5m = _atr(df_5m).iloc[-1]
-        if atr_5m <= 0:
-            return None
-
-        mid = _find_fvg_midpoint(df_5m, side, lookback=15)
-        if mid is None:
-            return None
-
-        # Enter immediately at current price with offset so the order activates "de una"
-        entry_raw = Decimal(str(df_5m["close"].iloc[-1]))
-        entry = _apply_offset(entry_raw, side)
-        div_label = "Bullish Div" if bullish_div else "Bearish Div"
-        score = abs(rsi_now - 50) / 50 + 0.15   # bonus por ser señal de reversión
-
-        return Signal(
-            symbol=symbol, side=side, strategy=self.NAME,
-            entry_price=entry, atr_5m=Decimal(str(atr_5m)),
-            reason=f"{div_label} | RSI15m={rsi_now:.1f} | FVG mid={float(mid):.6f}",
-            score=score,
-        )
+            
+        # LONG Logic
+        if c_ema9 > c_ema21 and current["close"] > c_ema50 and c_st_dir == 1:
+            if 50 < c_rsi < 70:
+                if current["low"] <= c_ema21 and current["close"] > c_ema21:
+                    entry = Decimal(str(current["close"]))
+                    sl_val = Decimal(str(c_st)) * Decimal("0.999")
+                    return Signal(
+                        symbol=symbol, side="long", strategy=self.NAME, order_type="market",
+                        entry_price=entry, sl_price=sl_val, atr_5m=atr_val,
+                        reason=f"ST Pullback Long | ADX={c_adx:.1f} | RSI={c_rsi:.1f}",
+                        score=1.0
+                    )
+                    
+        # SHORT Logic
+        if c_ema9 < c_ema21 and current["close"] < c_ema50 and c_st_dir == -1:
+            if 30 < c_rsi < 50:
+                if current["high"] >= c_ema21 and current["close"] < c_ema21:
+                    entry = Decimal(str(current["close"]))
+                    sl_val = Decimal(str(c_st)) * Decimal("1.001")
+                    return Signal(
+                        symbol=symbol, side="short", strategy=self.NAME, order_type="market",
+                        entry_price=entry, sl_price=sl_val, atr_5m=atr_val,
+                        reason=f"ST Pullback Short | ADX={c_adx:.1f} | RSI={c_rsi:.1f}",
+                        score=1.0
+                    )
+                    
+        return None

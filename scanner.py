@@ -63,7 +63,7 @@ class OKXClient:
         await self._client.aclose()
 
     def _sign(self, method: str, path: str, body: str = "") -> dict[str, str]:
-        ts  = datetime.utcnow().isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        ts  = datetime.utcnow().isoformat(timespec="milliseconds") + "Z"
         pre = f"{ts}{method.upper()}{path}{body}"
         sig = base64.b64encode(
             hmac.new(self.api_secret.encode(), pre.encode(), hashlib.sha256).digest()

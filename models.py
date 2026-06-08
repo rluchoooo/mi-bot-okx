@@ -44,8 +44,8 @@ class TradeSide(str, enum.Enum):
 
 
 class Strategy(str, enum.Enum):
-    TREND      = "QUANTUM_V10_PRO"
-    DIVERGENCE = "QUANTUM_DIVERGENCE"
+    TREND      = "QUANTUM_SMC_V10_PRO"
+    DIVERGENCE = "SUPERTREND_PULLBACK_V3"
 
 
 class Trade(Base):

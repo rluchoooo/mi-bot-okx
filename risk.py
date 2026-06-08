@@ -11,13 +11,13 @@ from config import (
     BREAKEVEN_ACTIVATION_PCT, BREAKEVEN_PROFIT_PCT,
     FIXED_RISK_USDT,
     LEVERAGE,
-    TRAILING_ACTIVATION_PCT, TRAILING_RETAIN_PCT,
+    SMC_TRAIL_ACTIVATION, SMC_TRAIL_RETAIN,
+    ST_TRAIL_ACTIVATION, ST_TRAIL_RETAIN,
 )
 
 # Re-export for backward compatibility
 RISK_USD          = FIXED_RISK_USDT
 BE_TRIGGER_PCT    = BREAKEVEN_ACTIVATION_PCT
-TRAIL_TRIGGER_PCT = TRAILING_ACTIVATION_PCT
 BE_LOCK_PCT       = BREAKEVEN_PROFIT_PCT
 
 
@@ -65,12 +65,13 @@ def new_trail_sl(
     peak_price: Decimal,
     side: str,
     current_sl: Decimal,
+    retain_pct: Decimal,
 ) -> Decimal:
     """
-    Nuevo trailing stop: retiene el 65% de la ganancia máxima (nunca retrocede).
+    Nuevo trailing stop: retiene el % de la ganancia máxima especificado.
     """
     max_gain = abs(peak_price - entry)
-    retained = max_gain * TRAILING_RETAIN_PCT
+    retained = max_gain * retain_pct
     candidate = entry + retained if side == "long" else entry - retained
     return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
 

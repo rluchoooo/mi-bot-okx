@@ -90,16 +90,6 @@ def evaluate(
             ))
             return decisions
 
-    # ── MAX LOSS (Asfixia) ──────────────────────────────────────────
-    from config import MAX_ABSOLUTE_LOSS
-    if unrealized < MAX_ABSOLUTE_LOSS:
-        decisions.append(LifecycleDecision(
-            action=Action.CLOSE_MARKET,
-            reason="MAX_LOSS_ASFIXIA",
-            log_message=f"💀 Asfixia (Pérdida Crítica): PnL={unrealized:.2f} USDT < {MAX_ABSOLUTE_LOSS}. Cierre IOC inmediato.",
-        ))
-        return decisions
-
     # ── 1. Trailing stop hit ────────────────────────────────────────
     if trail_activated and trail_sl is not None:
         hit = (price <= trail_sl) if side == "long" else (price >= trail_sl)

@@ -1,6 +1,6 @@
 """
-macro_shield.py – Escudo Macroeconómico Anti-Shock basado en volatilidad de BTC 5M.
-Si la vela de 5 minutos de BTC supera 1.5% de rango, bloquea nuevas entradas 3 horas.
+macro_shield.py – Escudo Macroeconómico Anti-Shock basado en volatilidad de BTC 15M.
+Si la vela de 15 minutos de BTC supera 2% de rango, bloquea nuevas entradas 3 horas.
 Emite recordatorio en logs cada 60 segundos mientras está activo.
 """
 from __future__ import annotations

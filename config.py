@@ -42,22 +42,20 @@ EMA_TREND   = 50             # Usado para el bias 1H/15M en Strategy A
 
 # ── SL / TP ───────────────────────────────────────────────────────────
 ATR_MULTIPLIER_SL = Decimal("2.5")
-ATR_MULTIPLIER_TP = Decimal("5.0")   # Ratio exacto 1:2
+# Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
 # ── BREAKEVEN ─────────────────────────────────────────────────────────
-BREAKEVEN_ACTIVATION_PCT = Decimal("0.60")
-BREAKEVEN_PROFIT_PCT     = Decimal("0.00")   # 0% lock, mueve a entrada exacta
+BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Activa al 40% del TP
+BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Asegura 15% de la distancia total
 
 # ── TRAILING STOP ─────────────────────────────────────────────────────
-TRAILING_ACTIVATION_PCT = Decimal("0.85")
-TRAILING_DISTANCE_ATR   = Decimal("2.5")     # correa = 2.5x ATR
+TRAILING_ACTIVATION_PCT = Decimal("0.90")    # Activa al 90% del TP
+TRAILING_RETAIN_PCT     = Decimal("0.65")    # Retiene el 65% de la ganancia máxima
 TRAIL_RETRY_SECONDS     = 10                 # Reintento si exchange rechaza orden
 
-# ── MAX LOSS & SALIDA TEMPRANA (Early Exit) ───────────────────────────
-MAX_ABSOLUTE_LOSS           = Decimal("-5.0")
-EARLY_EXIT_SL_PCT           = Decimal("0.40")
-EARLY_EXIT_VOL_MULT         = 1.8
-EARLY_EXIT_LOOKBACK_MINUTES = 120
+# ── SUPERTREND ────────────────────────────────────────────────────────
+SUPERTREND_FACTOR = 3.0
+SUPERTREND_PERIOD = 10
 
 # ── FILTRO BTC (Escudo Macro) ─────────────────────────────────────────
 BTC_MAX_VOLATILITY_PCT    = 0.015

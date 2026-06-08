@@ -16,7 +16,8 @@ import pandas as pd
 
 from config import (
     BREAKEVEN_ACTIVATION_PCT,
-    TRAILING_ACTIVATION_PCT,
+    SMC_TRAIL_ACTIVATION, SMC_TRAIL_RETAIN,
+    ST_TRAIL_ACTIVATION, ST_TRAIL_RETAIN,
 )
 from risk import (
     breakeven_sl, new_trail_sl, pnl_pct_of_risk, pnl_usd,
@@ -53,6 +54,7 @@ def evaluate(
     trail_sl:      Optional[Decimal],
     peak_price:    Optional[Decimal],
     tp_original:   Decimal,
+    strategy_name: str = "",
     df_5m:         Optional[pd.DataFrame] = None,
     opened_at:     Optional[datetime]     = None,
 ) -> list[LifecycleDecision]:
@@ -60,6 +62,14 @@ def evaluate(
     Evalúa el estado de la posición y retorna decisiones ordenadas.
     """
     decisions: list[LifecycleDecision] = []
+    
+    # ── Asignación Dinámica de Perfiles ──
+    if "SMC" in strategy_name.upper():
+        trail_act_pct = SMC_TRAIL_ACTIVATION
+        trail_ret_pct = SMC_TRAIL_RETAIN
+    else:
+        trail_act_pct = ST_TRAIL_ACTIVATION
+        trail_ret_pct = ST_TRAIL_RETAIN
 
     unrealized = pnl_usd(entry, price, qty, ct_val, side)
     pnl_ratio  = pnl_pct_of_risk(unrealized, risk_usd)
@@ -90,6 +100,8 @@ def evaluate(
             ))
             return decisions
 
+    # ── Early Exit (Omitido por brevedad en este snippet, pero se podría añadir si estuviera activo)
+
     # ── 1. Trailing stop hit ────────────────────────────────────────
     if trail_activated and trail_sl is not None:
         hit = (price <= trail_sl) if side == "long" else (price >= trail_sl)
@@ -105,7 +117,7 @@ def evaluate(
     if trail_activated and trail_sl is not None:
         if peak_price is None:
             peak_price = price
-        updated = new_trail_sl(entry, peak_price, side, trail_sl)
+        updated = new_trail_sl(entry, peak_price, side, trail_sl, trail_ret_pct)
         if updated != trail_sl:
             decisions.append(LifecycleDecision(
                 action=Action.MOVE_SL,
@@ -114,11 +126,11 @@ def evaluate(
                 log_message=f"🎯 Trail SL movido: {trail_sl:.6f} → {updated:.6f}",
             ))
 
-    # ── 3. Activar Trailing (90%) ───────────────────────────────────
-    if not trail_activated and progress >= TRAILING_ACTIVATION_PCT:
+    # ── 3. Activar Trailing ─────────────────────────────────────────
+    if not trail_activated and progress >= trail_act_pct:
         if peak_price is None:
             peak_price = price
-        init_sl = new_trail_sl(entry, peak_price, side, current_sl)
+        init_sl = new_trail_sl(entry, peak_price, side, current_sl, trail_ret_pct)
         decisions.append(LifecycleDecision(
             action=Action.MOVE_SL,
             reason="TRAIL_ACTIVATE",
@@ -135,7 +147,7 @@ def evaluate(
         ))
         return decisions
 
-    # ── 4. Activar Breakeven (40%) ──────────────────────────────────
+    # ── 4. Activar Breakeven ────────────────────────────────────────
     if not be_activated and not trail_activated and progress >= BREAKEVEN_ACTIVATION_PCT:
         be_sl = breakeven_sl(entry, side, tp_dist)
         decisions.append(LifecycleDecision(

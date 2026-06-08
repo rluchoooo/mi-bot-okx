@@ -45,12 +45,12 @@ ATR_MULTIPLIER_SL = Decimal("2.0")
 # Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
 # ── BREAKEVEN ─────────────────────────────────────────────────────────
-BREAKEVEN_ACTIVATION_PCT = Decimal("0.35")   # Activa al 35% del camino al TP
+BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Activa al 40% del camino al TP
 BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Asegura 15% de la distancia total
 
 # ── TRAILING STOP ─────────────────────────────────────────────────────
-TRAILING_ACTIVATION_PCT = Decimal("0.80")    # Activa al 80% del TP
-TRAILING_RETAIN_PCT     = Decimal("0.65")    # Retiene el 65% de la ganancia máxima
+TRAILING_ACTIVATION_PCT = Decimal("0.90")    # Activa al 90% del TP (Mucho más tardío)
+TRAILING_RETAIN_PCT     = Decimal("0.75")    # Retiene el 75% (Holgura del 15%)
 TRAIL_RETRY_SECONDS     = 10                 # Reintento si exchange rechaza orden
 
 # ── SUPERTREND ────────────────────────────────────────────────────────

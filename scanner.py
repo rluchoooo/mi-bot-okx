@@ -544,6 +544,11 @@ class QuantumBotRuntime:
                 if db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).count() >= MAX_CONCURRENT_TRADES:
                     break
             await self._open_trade(client, sig)
+            
+        if not candidates:
+            self._log(f"🔎 Escaneo en {len(universe)} monedas completado. Criterios de estrategia no cumplidos.", "SYSTEM")
+        else:
+            self._log(f"✅ ¡Señal encontrada! Abriendo {len(candidates)} operación(es).", "SYSTEM")
 
     async def _open_trade(self, client: OKXClient, sig: Signal) -> None:
         iid  = sig.symbol

@@ -24,7 +24,6 @@ from config import (
     MAX_CONCURRENT_TRADES, MIN_VOLUME_24H, RECONCILE_INTERVAL,
     RECONCILE_RETRY_SEC, SCAN_INTERVAL_SECONDS, STALE_ORDER_MINUTES,
     TOP_COINS_LIMIT, TRAIL_RETRY_SECONDS,
-    EARLY_EXIT_VOL_MULT, EARLY_EXIT_LOOKBACK_MINUTES,
 )
 from lifecycle import Action, evaluate
 from macro_shield import MacroShield
@@ -733,17 +732,9 @@ class QuantumBotRuntime:
             current_peak = td["peak"] or price
             new_peak = max(current_peak, price) if td["side"] == "long" else min(current_peak, price)
 
-            # Candles for volume early exit check
-            df_5m_vol = None
-            if not td["be_done"] and not td["trail_done"]:
-                opened_mins = (datetime.now(timezone.utc) - td["opened_at"].replace(tzinfo=timezone.utc)).total_seconds() / 60 if td["opened_at"] else 999
-                if opened_mins <= EARLY_EXIT_LOOKBACK_MINUTES:
-                    try:
-                        df_5m_vol = await client.candles(td["symbol"], "5m", limit=10)
-                    except Exception:
-                        pass
-
-            tp_original = compute_tp(td["entry"], td["side"], td["atr"])
+            # Compute original TP using new signature: compute_tp(entry, sl, side)
+            # Since td["sl_price"] (or td["sl"]) is the original SL
+            tp_original = compute_tp(td["entry"], td["sl"], td["side"])
             inst        = self._instruments.get(td["symbol"])
             ct_val      = Decimal(inst["ctVal"]) if inst else Decimal("1")
 
@@ -754,7 +745,6 @@ class QuantumBotRuntime:
                 be_activated=td["be_done"], trail_activated=td["trail_done"],
                 trail_sl=td["trail_sl"], peak_price=new_peak,
                 tp_original=tp_original,
-                df_5m=df_5m_vol, opened_at=td["opened_at"],
             )
 
             for decision in decisions:

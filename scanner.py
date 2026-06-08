@@ -525,9 +525,9 @@ class QuantumBotRuntime:
                 continue
             try:
                 df_1h, df_15m, df_5m = await asyncio.gather(
-                    client.candles(iid, "1H", 60),
-                    client.candles(iid, "15m", 50),
-                    client.candles(iid, "5m", 30),
+                    client.candles(iid, "1H", 100),
+                    client.candles(iid, "15m", 100),
+                    client.candles(iid, "5m", 100),
                 )
                 for sig in [
                     self.trend_strat.signal(iid, df_1h, df_15m, df_5m),

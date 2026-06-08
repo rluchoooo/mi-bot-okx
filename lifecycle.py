@@ -39,26 +39,6 @@ class LifecycleDecision:
     log_message: str = ""
 
 
-def _volume_confirms_exit(df_5m: Optional[pd.DataFrame], side: str) -> bool:
-    """
-    Retorna True si el volumen adverso en las últimas velas es ≥ 1.8x el promedio.
-    Volumen adverso para LONG = velas bajistas; para SHORT = velas alcistas.
-    """
-    if df_5m is None or df_5m.empty or len(df_5m) < 5:
-        return False
-    recent = df_5m.tail(5)
-    avg_vol = df_5m["volume"].mean()
-    if avg_vol <= 0:
-        return False
-    if side == "long":
-        adverse_vols = recent.loc[recent["close"] < recent["open"], "volume"]
-    else:
-        adverse_vols = recent.loc[recent["close"] > recent["open"], "volume"]
-    if adverse_vols.empty:
-        return False
-    return float(adverse_vols.mean()) >= avg_vol * EARLY_EXIT_VOL_MULT
-
-
 def evaluate(
     side:          str,
     entry:         Decimal,
@@ -134,7 +114,9 @@ def evaluate(
 
     # ── 2. Trailing seguimiento ─────────────────────────────────────
     if trail_activated and trail_sl is not None:
-        updated = new_trail_sl(price, side, atr_5m, trail_sl)
+        if peak_price is None:
+            peak_price = price
+        updated = new_trail_sl(entry, peak_price, side, trail_sl)
         if updated != trail_sl:
             decisions.append(LifecycleDecision(
                 action=Action.MOVE_SL,
@@ -143,9 +125,11 @@ def evaluate(
                 log_message=f"🎯 Trail SL movido: {trail_sl:.6f} → {updated:.6f}",
             ))
 
-    # ── 3. Activar Trailing (75%) ───────────────────────────────────
+    # ── 3. Activar Trailing (90%) ───────────────────────────────────
     if not trail_activated and progress >= TRAILING_ACTIVATION_PCT:
-        init_sl = new_trail_sl(price, side, atr_5m, current_sl)
+        if peak_price is None:
+            peak_price = price
+        init_sl = new_trail_sl(entry, peak_price, side, current_sl)
         decisions.append(LifecycleDecision(
             action=Action.MOVE_SL,
             reason="TRAIL_ACTIVATE",
@@ -162,7 +146,7 @@ def evaluate(
         ))
         return decisions
 
-    # ── 4. Activar Breakeven (50%) ──────────────────────────────────
+    # ── 4. Activar Breakeven (40%) ──────────────────────────────────
     if not be_activated and not trail_activated and progress >= BREAKEVEN_ACTIVATION_PCT:
         be_sl = breakeven_sl(entry, side, tp_dist)
         decisions.append(LifecycleDecision(
@@ -175,29 +159,5 @@ def evaluate(
             ),
         ))
         return decisions
-
-    # ── 5. Early Exit (primeros 20 min, -40% riesgo + volumen adverso) ──
-    if (
-        not be_activated
-        and not trail_activated
-        and pnl_ratio <= -EARLY_EXIT_SL_PCT
-    ):
-        # Verificar ventana de tiempo
-        in_window = True
-        if opened_at is not None:
-            opened_at_utc = opened_at.replace(tzinfo=timezone.utc) if opened_at.tzinfo is None else opened_at
-            mins_open = (datetime.now(timezone.utc) - opened_at_utc).total_seconds() / 60
-            in_window = mins_open <= EARLY_EXIT_LOOKBACK_MINUTES
-
-        if in_window and _volume_confirms_exit(df_5m, side):
-            decisions.append(LifecycleDecision(
-                action=Action.CLOSE_MARKET,
-                reason="EARLY_VOLUME_CUT",
-                log_message=(
-                    f"⚡ Early Exit: PnL {float(unrealized):.2f} USDT "
-                    f"({float(pnl_ratio)*100:.1f}% riesgo) + volumen adverso ≥1.8x. "
-                    f"Estructura fallida."
-                ),
-            ))
 
     return decisions

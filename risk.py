@@ -7,32 +7,29 @@ from __future__ import annotations
 from decimal import ROUND_DOWN, Decimal
 
 from config import (
-    ATR_MULTIPLIER_SL, ATR_MULTIPLIER_TP,
+    ATR_MULTIPLIER_SL,
     BREAKEVEN_ACTIVATION_PCT, BREAKEVEN_PROFIT_PCT,
-    EARLY_EXIT_SL_PCT,
     FIXED_RISK_USDT,
     LEVERAGE,
-    TRAILING_ACTIVATION_PCT, TRAILING_DISTANCE_ATR,
+    TRAILING_ACTIVATION_PCT, TRAILING_RETAIN_PCT,
 )
 
 # Re-export for backward compatibility
 RISK_USD          = FIXED_RISK_USDT
 BE_TRIGGER_PCT    = BREAKEVEN_ACTIVATION_PCT
 TRAIL_TRIGGER_PCT = TRAILING_ACTIVATION_PCT
-TRAIL_DISTANCE_ATR = TRAILING_DISTANCE_ATR
-EARLY_EXIT_PCT    = -EARLY_EXIT_SL_PCT          # negative: represents a loss threshold
 BE_LOCK_PCT       = BREAKEVEN_PROFIT_PCT
 
 
 def compute_sl(entry: Decimal, side: str, atr: Decimal) -> Decimal:
-    """Stop Loss = entry ± 2.5 × ATR."""
+    """Stop Loss = entry ± 2.5 × ATR (Para SMC V10 Pro)."""
     distance = ATR_MULTIPLIER_SL * atr
     return entry - distance if side == "long" else entry + distance
 
 
-def compute_tp(entry: Decimal, side: str, atr: Decimal) -> Decimal:
-    """Take Profit = entry ± 5.0 × ATR (ratio 1:2)."""
-    distance = ATR_MULTIPLIER_TP * atr
+def compute_tp(entry: Decimal, sl: Decimal, side: str) -> Decimal:
+    """Take Profit = Ratio 1:2 (2x SL distance)."""
+    distance = abs(entry - sl) * Decimal("2.0")
     return entry + distance if side == "long" else entry - distance
 
 
@@ -57,29 +54,24 @@ def compute_qty(
 def breakeven_sl(entry: Decimal, side: str, tp_dist: Decimal) -> Decimal:
     """
     SL de breakeven = entrada + (BREAKEVEN_PROFIT_PCT × tp_dist).
-    Asegura un 10% del beneficio objetivo.
+    Asegura un 15% de la distancia total al TP.
     """
     lock = BREAKEVEN_PROFIT_PCT * tp_dist
     return entry + lock if side == "long" else entry - lock
 
 
-def trail_distance(atr_5m: Decimal) -> Decimal:
-    """Correa del trailing stop = 2.5x ATR."""
-    from config import TRAILING_DISTANCE_ATR
-    return TRAILING_DISTANCE_ATR * atr_5m
-
-
 def new_trail_sl(
-    price: Decimal,
+    entry: Decimal,
+    peak_price: Decimal,
     side: str,
-    atr_5m: Decimal,
     current_sl: Decimal,
 ) -> Decimal:
     """
-    Nuevo trailing stop siguiendo el precio (nunca retrocede).
+    Nuevo trailing stop: retiene el 65% de la ganancia máxima (nunca retrocede).
     """
-    dist      = trail_distance(atr_5m)
-    candidate = price - dist if side == "long" else price + dist
+    max_gain = abs(peak_price - entry)
+    retained = max_gain * TRAILING_RETAIN_PCT
+    candidate = entry + retained if side == "long" else entry - retained
     return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
 
 

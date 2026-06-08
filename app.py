@@ -351,6 +351,9 @@ thead { background:rgba(255,255,255,0.03); }
 # Gradio App
 # ──────────────────────────────────────────────────────────────────────
 
+# Auto-start bot on container boot
+runtime.start()
+
 with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS, fill_width=True) as demo:
     with gr.Row(elem_classes=["control-row"]):
         start_btn   = gr.Button("▶️ Iniciar Bot",  variant="primary")

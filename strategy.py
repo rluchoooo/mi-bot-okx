@@ -251,7 +251,7 @@ class SupertrendPullbackStrategy:
             if 50 < c_rsi < 70:
                 if current["low"] <= c_ema21 and current["close"] > c_ema21:
                     entry = Decimal(str(current["close"]))
-                    sl_val = Decimal(str(c_st)) * Decimal("0.999")
+                    sl_val = Decimal(str(c_st)) - atr_val
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=entry, sl_price=sl_val, atr_5m=atr_val,
@@ -264,7 +264,7 @@ class SupertrendPullbackStrategy:
             if 30 < c_rsi < 50:
                 if current["high"] >= c_ema21 and current["close"] < c_ema21:
                     entry = Decimal(str(current["close"]))
-                    sl_val = Decimal(str(c_st)) * Decimal("1.001")
+                    sl_val = Decimal(str(c_st)) + atr_val
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=entry, sl_price=sl_val, atr_5m=atr_val,

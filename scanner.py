@@ -502,7 +502,15 @@ class QuantumBotRuntime:
             active_syms = {t.symbol for t in db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).all()}
             cdwn_syms   = {c.symbol for c in db.query(Cooldown).all() if c.is_active}
 
-        if open_cnt >= MAX_CONCURRENT_TRADES:
+        # ALWAYS check real OKX positions to prevent double entries if DB was wiped
+        try:
+            okx_pos = await client.get_positions()
+            for p in okx_pos:
+                active_syms.add(p.get("instId"))
+        except Exception as e:
+            self._log(f"Error checking OKX positions: {e}", "ERROR")
+
+        if len(active_syms) >= MAX_CONCURRENT_TRADES:
             return
 
         # Top 50 by volume

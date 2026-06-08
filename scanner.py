@@ -422,11 +422,73 @@ class QuantumBotRuntime:
         except Exception as e:
             self._log(f"[SYNC] Error adoptando posiciones: {e}", "WARN")
 
+    async def _self_heal_auditor(self, client: OKXClient) -> None:
+        try:
+            positions = await client.get_positions()
+            pending = []
+            for o_type in ["oco", "conditional"]:
+                res = await client._req("GET", f"/api/v5/trade/orders-algo-pending?instType=SWAP&ordType={o_type}", auth=True)
+                if res:
+                    pending.extend(res)
+            
+            with get_session() as db:
+                for p in positions:
+                    inst_id = p.get("instId", "")
+                    if not inst_id.endswith("-USDT-SWAP"):
+                        continue
+                    pos_side = p.get("posSide", "long").lower()
+                    side = TradeSide.LONG if pos_side == "long" else TradeSide.SHORT
+                    entry = float(p.get("avgPx", 0))
+                    qty = float(p.get("pos", 0))
+                    
+                    # 1. Adopt orphans
+                    trade = db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT]), Trade.symbol == inst_id).first()
+                    if not trade:
+                        self._log(f"[{inst_id}] 🤖 AUDITOR: Posición huérfana detectada. Adoptando en la BD...", "SYSTEM")
+                        # Defaults para huérfanas
+                        atr_est = entry * 0.015
+                        trade = Trade(
+                            symbol=inst_id, side=side, strategy="SUPERTREND_PULLBACK_V3",
+                            status=TradeStatus.OPEN, entry_price=entry, qty=qty,
+                            sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
+                            tp_price=entry * (1.10 if side == TradeSide.LONG else 0.90),
+                            atr_5m=atr_est, leverage=int(p.get("lever", 10))
+                        )
+                        db.add(trade)
+                        db.commit()
+                        db.refresh(trade)
+                    
+                    # 2. Cleanup duplicates & missing
+                    algos_for_sym = [a for a in pending if a.get("instId") == inst_id]
+                    sl_count = sum(1 for a in algos_for_sym if a.get("slTriggerPx"))
+                    tp_count = sum(1 for a in algos_for_sym if a.get("tpTriggerPx"))
+                    
+                    if sl_count > 1 or tp_count > 1 or (sl_count == 0 and tp_count == 0):
+                        if sl_count > 1 or tp_count > 1:
+                            self._log(f"[{inst_id}] 🤖 AUDITOR: Basura detectada ({tp_count} TPs, {sl_count} SLs). Limpiando...", "WARN")
+                            payload = [{"instId": inst_id, "algoId": a["algoId"]} for a in algos_for_sym]
+                            if payload:
+                                await client._req("POST", "/api/v5/trade/cancel-algos", payload, auth=True)
+                                await asyncio.sleep(0.5)
+                        
+                        self._log(f"[{inst_id}] 🤖 AUDITOR: Restaurando SL/TP según Base de Datos.", "SYSTEM")
+                        if trade.status == TradeStatus.TRAILING:
+                            await client.place_algo_order(inst_id, pos_side, Decimal(str(qty)), sl=Decimal(str(trade.trail_sl)))
+                        else:
+                            await client.place_algo_order(inst_id, pos_side, Decimal(str(qty)), sl=Decimal(str(trade.sl_price)), tp=Decimal(str(trade.tp_price)))
+
+        except Exception as e:
+            pass
+
     # ── Scanner Loop (15s) ────────────────────────────────────────────
 
     async def _scanner_loop(self, client: OKXClient) -> None:
+        loop_counter = 0
         while self.running:
             try:
+                loop_counter += 1
+                if loop_counter % 6 == 0:
+                    await self._self_heal_auditor(client)
                 await self._scan_tick(client)
                 self.last_scan  = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
                 self.last_error = ""

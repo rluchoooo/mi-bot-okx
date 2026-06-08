@@ -407,7 +407,7 @@ class QuantumBotRuntime:
                     # Assign conservative SL (5% of price)
                     atr_est = entry * Decimal("0.005") / Decimal("2.5")
                     sl = compute_sl(entry, side, atr_est)
-                    tp = compute_tp(entry, side, atr_est)
+                    tp = compute_tp(entry, sl, side)
                     db.add(Trade(
                         symbol=iid, side=TradeSide(side), strategy=Strategy.TREND,
                         entry_price=float(entry), qty=float(abs(qty_raw)),

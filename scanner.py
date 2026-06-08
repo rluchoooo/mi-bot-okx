@@ -825,7 +825,7 @@ class QuantumBotRuntime:
                             await client.close_position(symbol, side)
                         except Exception as e:
                             # 51000 means "Position does not exist" or similar on OKX
-                            if "51000" in str(e) or "not found" in str(e).lower() or "no position" in str(e).lower():
+                            if "51000" in str(e) or "51023" in str(e) or "not found" in str(e).lower() or "no position" in str(e).lower() or "doesn't exist" in str(e).lower():
                                 self._log(f"[{symbol}] Posición ya cerrada nativamente por OKX. Sincronizando BD.")
                             else:
                                 raise e

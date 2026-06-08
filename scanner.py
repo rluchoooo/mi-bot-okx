@@ -63,7 +63,7 @@ class OKXClient:
         await self._client.aclose()
 
     def _sign(self, method: str, path: str, body: str = "") -> dict[str, str]:
-        ts  = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+        ts  = datetime.utcnow().isoformat(timespec="milliseconds").replace("+00:00", "Z")
         pre = f"{ts}{method.upper()}{path}{body}"
         sig = base64.b64encode(
             hmac.new(self.api_secret.encode(), pre.encode(), hashlib.sha256).digest()
@@ -268,7 +268,7 @@ class QuantumBotRuntime:
     # ── Logging ──────────────────────────────────────────────────────
 
     def _log(self, msg: str, level: str = "INFO") -> None:
-        stamp = datetime.now(timezone.utc).strftime("%H:%M:%S")
+        stamp = datetime.utcnow().strftime("%H:%M:%S")
         line  = f"{stamp} | [{level}] {msg}"
         print(line, flush=True)  # <-- ESTO HACE QUE SE VEA EN LA PESTAÑA LOGS DE HUGGING FACE
         with self._lock:
@@ -490,7 +490,7 @@ class QuantumBotRuntime:
                 if loop_counter % 6 == 0:
                     await self._self_heal_auditor(client)
                 await self._scan_tick(client)
-                self.last_scan  = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+                self.last_scan  = datetime.utcnow().strftime("%H:%M:%S UTC")
                 self.last_error = ""
             except Exception as e:
                 self.last_error = str(e)
@@ -500,7 +500,7 @@ class QuantumBotRuntime:
     async def _scan_tick(self, client: OKXClient) -> None:
         # Daily loss check
         with get_session() as db:
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             closed_today = db.query(Trade).filter(
                 Trade.closed_at >= today_start,
                 Trade.realized_pnl.isnot(None),
@@ -534,9 +534,9 @@ class QuantumBotRuntime:
                                     await client.close_position(t.symbol, t.side)
                                     t.status = TradeStatus.CLOSED
                                     t.close_reason = "MACRO_SHOCK_CUT"
-                                    t.closed_at = datetime.now(timezone.utc)
+                                    t.closed_at = datetime.utcnow()
                                     # Aplicar Cooldown de 30m
-                                    until = datetime.now(timezone.utc) + timedelta(minutes=COOLDOWN_MINUTES)
+                                    until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
                                     ex = db.query(Cooldown).filter(Cooldown.symbol == t.symbol).first()
                                     if ex:
                                         ex.until = until
@@ -729,7 +729,7 @@ class QuantumBotRuntime:
                         await client.cancel_order(trade.symbol, ord_id)
                         trade.status    = TradeStatus.CLOSED
                         trade.close_reason = "STALE_ORDER"
-                        trade.closed_at = datetime.now(timezone.utc)
+                        trade.closed_at = datetime.utcnow()
                         trade.realized_pnl = 0.0
                         db.add(TradeEvent(trade_id=tid, event_type="STALE_CANCEL",
                                           message=f"Orden {ord_id} cancelada (stale > {STALE_ORDER_MINUTES}m)"))
@@ -906,12 +906,12 @@ class QuantumBotRuntime:
                         trade.close_price  = float(price)
                         trade.close_reason = decision.reason
                         trade.realized_pnl = float(pnl)
-                        trade.closed_at    = datetime.now(timezone.utc)
+                        trade.closed_at    = datetime.utcnow()
                         db.add(TradeEvent(trade_id=trade_id, event_type="CLOSE",
                                           message=f"{decision.reason} | PnL: {float(pnl):.2f} USDT",
                                           price=float(price)))
                         # Cooldown
-                        until = datetime.now(timezone.utc) + timedelta(minutes=COOLDOWN_MINUTES)
+                        until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
                         ex = db.query(Cooldown).filter(Cooldown.symbol == symbol).first()
                         if ex:
                             ex.until = until

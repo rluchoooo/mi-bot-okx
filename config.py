@@ -41,7 +41,7 @@ EMA_SLOW    = 100
 EMA_TREND   = 50             # Usado para el bias 1H/15M en Strategy A
 
 # ── SL / TP ───────────────────────────────────────────────────────────
-ATR_MULTIPLIER_SL = Decimal("2.5")
+ATR_MULTIPLIER_SL = Decimal("2.0")
 # Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
 # ── BREAKEVEN ─────────────────────────────────────────────────────────

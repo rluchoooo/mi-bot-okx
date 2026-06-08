@@ -55,8 +55,8 @@ STATUS_ICON = {
 }
 
 STRATEGY_SHORT = {
-    "QUANTUM_V10_PRO":   "QUANTUM V10 (TENDENCIA)",
-    "QUANTUM_DIVERGENCE": "FRANCOTIRADOR (DIV)",
+    "QUANTUM_SMC_V10_PRO":    "QUANTUM SMC V10 (FVG)",
+    "SUPERTREND_PULLBACK_V3": "SUPERTREND PULLBACK V3",
 }
 
 
@@ -175,13 +175,12 @@ def build_dashboard() -> str:
     </section>
     <section class="card strategy-card">
       <div class="label">ESTRATEGIAS ACTIVAS</div>
-      <div class="kv"><span>A: QUANTUM TREND V10 PRO</span><b class="pos">ON</b></div>
-      <div class="kv"><span>  • Filtro 1H → EMA50 bias</span></div>
-      <div class="kv"><span>  • Filtro 15M → EMA50 + RSI</span></div>
-      <div class="kv"><span>  • Sniper 5M → FVG Entry</span></div>
-      <div class="kv"><span>B: QUANTUM DIVERGENCE</span><b class="pos">ON</b></div>
-      <div class="kv"><span>  • Divergencia RSI/Precio 15M</span></div>
-      <div class="kv"><span>  • Confirmación FVG 5M</span></div>
+      <div class="kv"><span>A: QUANTUM SMC V10 PRO</span><b class="pos">ON</b></div>
+      <div class="sub">- Filtro SMC → FVG + Sweep</div>
+      <div class="sub">- Volumen SMA → > 1.25x</div>
+      <div class="sub">- Entrada Limit → Sniper</div>
+      <div class="kv"><span>B: SUPERTREND PULLBACK V3</span><b class="pos">ON</b></div>
+      <div class="sub">- EMA 9/21/50 + ADX > 20</div>
     </section>
   </div>
 

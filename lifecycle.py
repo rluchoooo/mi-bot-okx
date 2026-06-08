@@ -15,12 +15,11 @@ from typing import Optional
 import pandas as pd
 
 from config import (
-    BREAKEVEN_ACTIVATION_PCT, EARLY_EXIT_LOOKBACK_MINUTES,
-    EARLY_EXIT_SL_PCT, EARLY_EXIT_VOL_MULT,
+    BREAKEVEN_ACTIVATION_PCT,
     TRAILING_ACTIVATION_PCT,
 )
 from risk import (
-    breakeven_sl, new_trail_sl, pnl_pct_of_risk, pnl_usd, trail_distance,
+    breakeven_sl, new_trail_sl, pnl_pct_of_risk, pnl_usd,
 )
 
 

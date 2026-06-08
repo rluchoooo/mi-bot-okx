@@ -31,9 +31,9 @@ class Signal:
     strategy:    str          # "QUANTUM_SMC_V10_PRO" | "SUPERTREND_PULLBACK_V3"
     order_type:  str          # "limit" | "market"
     entry_price: Decimal      # price to enter at
-    sl_price:    Optional[Decimal] = None # Exact SL for strategy B
     atr_5m:      Decimal
     reason:      str
+    sl_price:    Optional[Decimal] = None # Exact SL for strategy B
     score:       float = 0.0
 
 

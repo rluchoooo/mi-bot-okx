@@ -775,6 +775,7 @@ class QuantumBotRuntime:
                     "id":          t.id,
                     "symbol":      t.symbol,
                     "side":        t.side.value if hasattr(t.side, "value") else t.side,
+                    "strategy":    t.strategy.value if hasattr(t.strategy, "value") else t.strategy,
                     "entry":       Decimal(str(t.entry_price)),
                     "qty":         Decimal(str(t.qty)),
                     "sl":          Decimal(str(t.sl_price)),
@@ -820,6 +821,7 @@ class QuantumBotRuntime:
                 be_activated=td["be_done"], trail_activated=td["trail_done"],
                 trail_sl=td["trail_sl"], peak_price=new_peak,
                 tp_original=tp_original,
+                strategy_name=td.get("strategy", ""),
             )
 
             for decision in decisions:

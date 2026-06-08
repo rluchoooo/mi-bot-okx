@@ -45,7 +45,7 @@ ATR_MULTIPLIER_SL = Decimal("2.5")
 # Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
 # ── BREAKEVEN ─────────────────────────────────────────────────────────
-BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Activa al 40% del TP
+BREAKEVEN_ACTIVATION_PCT = Decimal("0.35")   # Activa al 35% del camino al TP
 BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Asegura 15% de la distancia total
 
 # ── TRAILING STOP ─────────────────────────────────────────────────────

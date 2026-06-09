@@ -220,6 +220,12 @@ class OKXClient:
     async def get_positions(self) -> list[dict]:
         return await self._req("GET", "/api/v5/account/positions?instType=SWAP", auth=True)
 
+    async def get_positions_history(self, inst_id: str, limit: int = 1) -> list[dict]:
+        try:
+            return await self._req("GET", f"/api/v5/account/positions-history?instId={inst_id}&limit={limit}", auth=True)
+        except Exception:
+            return []
+
     async def get_balance(self) -> float:
         try:
             rows = await self._req("GET", "/api/v5/account/balance", auth=True)
@@ -759,16 +765,97 @@ class QuantumBotRuntime:
             await asyncio.sleep(RECONCILE_INTERVAL)
 
     async def _reconcile_tick(self, client: OKXClient) -> None:
+        # Fetch actual positions from OKX
+        try:
+            okx_pos = await client.get_positions()
+            okx_pos_map = {p["instId"]: p for p in okx_pos}
+        except Exception as e:
+            self._log(f"Error al obtener posiciones activas en OKX: {e}", "ERROR")
+            okx_pos_map = None
+
         with get_session() as db:
             open_trades = db.query(Trade).filter(
                 Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
             ).all()
             if not open_trades:
                 return
-            
-            # Log silencioso o periódico del supervisor para que sepas que está activo
+
+            active_snapshots = []
+            for t in open_trades:
+                if okx_pos_map is not None:
+                    if t.symbol in okx_pos_map:
+                        # Position is active. Sync real entry price and quantity.
+                        p = okx_pos_map[t.symbol]
+                        real_entry = float(p.get("avgPx", 0))
+                        real_qty = float(abs(Decimal(p.get("pos", "0"))))
+                        if real_entry > 0:
+                            if t.entry_price != real_entry or t.qty != real_qty:
+                                self._log(f"[{t.symbol}] 🔄 Sincronizando Entrada/Cantidad real de OKX: {t.entry_price} -> {real_entry} | Qty: {t.qty} -> {real_qty}")
+                                t.entry_price = real_entry
+                                t.qty = real_qty
+                                db.commit()
+                        active_snapshots.append(t)
+                    else:
+                        # Position is closed. Sync natively closed position details from history!
+                        history = await client.get_positions_history(t.symbol, limit=1)
+                        success_sync = False
+                        if history:
+                            last_closed = history[0]
+                            c_time_ms = float(last_closed.get("cTime", 0))
+                            u_time_ms = float(last_closed.get("uTime", 0))
+                            closed_at_dt = datetime.utcfromtimestamp(u_time_ms / 1000)
+                            
+                            opened_at_ts = t.opened_at.replace(tzinfo=timezone.utc).timestamp() if t.opened_at.tzinfo is None else t.opened_at.timestamp()
+                            if (c_time_ms / 1000) >= (opened_at_ts - 60):
+                                real_entry = float(last_closed.get("openAvgPx", t.entry_price))
+                                real_exit = float(last_closed.get("closeAvgPx", 0))
+                                real_pnl = float(last_closed.get("realizedPnl", 0))
+                                
+                                # Determine close reason
+                                close_reason = "OKX_NATIVE_CLOSE"
+                                if t.tp_price and abs(real_exit - t.tp_price) / t.tp_price < 0.01:
+                                    close_reason = "TAKE_PROFIT_HIT"
+                                elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
+                                    close_reason = "STOP_LOSS_HIT"
+                                elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
+                                    close_reason = "STOP_LOSS_HIT"
+                                    
+                                self._log(f"[{t.symbol}] 🔄 Cierre nativo detectado en OKX: Entrada={real_entry} | Salida={real_exit} | PnL={real_pnl} USDT | Razón={close_reason}")
+                                
+                                t.status = TradeStatus.CLOSED
+                                t.entry_price = real_entry
+                                t.close_price = real_exit
+                                t.realized_pnl = real_pnl
+                                t.close_reason = close_reason
+                                t.closed_at = closed_at_dt
+                                
+                                db.add(TradeEvent(
+                                    trade_id=t.id, event_type="CLOSE",
+                                    message=f"Cierre nativo detectado ({close_reason}) | PnL: {real_pnl:.2f} USDT (OKX)",
+                                    price=real_exit
+                                ))
+                                
+                                until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
+                                ex = db.query(Cooldown).filter(Cooldown.symbol == t.symbol).first()
+                                if ex:
+                                    ex.until = until
+                                else:
+                                    db.add(Cooldown(symbol=t.symbol, until=until))
+                                    
+                                db.commit()
+                                success_sync = True
+                                
+                        if not success_sync:
+                            self._log(f"[{t.symbol}] ⚠️ Posición cerrada en OKX pero sin registro compatible en historial. Cerrando vía simulación.", "WARN")
+                            active_snapshots.append(t)
+                else:
+                    active_snapshots.append(t)
+
+            if not active_snapshots:
+                return
+
             if int(time.time()) % 120 < RECONCILE_INTERVAL:
-                self._log(f"[AGENTE SUPERVISOR] Vigilando {len(open_trades)} posiciones activas. Comprobando latencias y métricas de Breakeven/Trailing...", "SYSTEM")
+                self._log(f"[AGENTE SUPERVISOR] Vigilando {len(active_snapshots)} posiciones activas. Comprobando latencias y métricas de Breakeven/Trailing...", "SYSTEM")
 
             trade_snapshots = [
                 {
@@ -789,7 +876,7 @@ class QuantumBotRuntime:
                     "status":      t.status,
                     "opened_at":   t.opened_at,
                 }
-                for t in open_trades
+                for t in active_snapshots
             ]
 
         # Fetch tickers
@@ -901,15 +988,31 @@ class QuantumBotRuntime:
                                 self._log(f"[{symbol}] Posición ya cerrada nativamente por OKX. Sincronizando BD.")
                             else:
                                 raise e
-                        pnl = pnl_usd(td["entry"], price, td["qty"], ct_val, side)
+
+                        # Try to get the actual exit price and realized PnL from OKX history
+                        real_exit = float(price)
+                        real_pnl = float(pnl_usd(td["entry"], price, td["qty"], ct_val, side))
+                        try:
+                            history = await client.get_positions_history(symbol, limit=1)
+                            if history:
+                                last_closed = history[0]
+                                c_time_ms = float(last_closed.get("cTime", 0))
+                                opened_at_ts = td["opened_at"].replace(tzinfo=timezone.utc).timestamp() if td["opened_at"].tzinfo is None else td["opened_at"].timestamp()
+                                if (c_time_ms / 1000) >= (opened_at_ts - 60):
+                                    real_exit = float(last_closed.get("closeAvgPx", real_exit))
+                                    real_pnl = float(last_closed.get("realizedPnl", real_pnl))
+                                    self._log(f"[{symbol}] Sincronizado cierre de historial OKX: Salida={real_exit} | PnL={real_pnl} USDT")
+                        except Exception as hist_err:
+                            self._log(f"[{symbol}] No se pudo sincronizar PnL de historial: {hist_err}", "WARN")
+
                         trade.status       = TradeStatus.CLOSED
-                        trade.close_price  = float(price)
+                        trade.close_price  = real_exit
                         trade.close_reason = decision.reason
-                        trade.realized_pnl = float(pnl)
+                        trade.realized_pnl = real_pnl
                         trade.closed_at    = datetime.utcnow()
                         db.add(TradeEvent(trade_id=trade_id, event_type="CLOSE",
-                                          message=f"{decision.reason} | PnL: {float(pnl):.2f} USDT",
-                                          price=float(price)))
+                                          message=f"{decision.reason} | PnL: {real_pnl:.2f} USDT",
+                                          price=real_exit))
                         # Cooldown
                         until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
                         ex = db.query(Cooldown).filter(Cooldown.symbol == symbol).first()
@@ -918,14 +1021,14 @@ class QuantumBotRuntime:
                         else:
                             db.add(Cooldown(symbol=symbol, until=until))
                         db.commit()
-                        sign = "+" if pnl >= 0 else ""
+                        sign = "+" if real_pnl >= 0 else ""
                         self._log(
-                            f"[{symbol}] ✅ CIERRE via {decision.reason} a {price:.6f} | "
-                            f"PnL: {sign}{float(pnl):.2f} USDT | Cooldown {COOLDOWN_MINUTES}m"
+                            f"[{symbol}] ✅ CIERRE via {decision.reason} a {real_exit:.6f} | "
+                            f"PnL: {sign}{real_pnl:.2f} USDT | Cooldown {COOLDOWN_MINUTES}m"
                         )
                         await notifier.notify_close(
                             symbol, side, decision.reason,
-                            float(td["entry"]), float(price), float(pnl)
+                            float(td["entry"]), float(real_exit), float(real_pnl)
                         )
                         break
 

@@ -264,6 +264,7 @@ class QuantumBotRuntime:
         self.compliance_restricted = set()  # Local set of compliance restricted symbols (error 51155)
         self._pending_orders: dict[int, tuple[str, float]] = {}  # trade_id → (ord_id, ts)
         self.current_exchange_balance: float = 0.0
+        self.last_positions: dict = {}
 
         self.last_scan       = "never"
         self.last_error      = ""
@@ -775,6 +776,7 @@ class QuantumBotRuntime:
         try:
             okx_pos = await client.get_positions()
             okx_pos_map = {p["instId"]: p for p in okx_pos}
+            self.last_positions = okx_pos_map
         except Exception as e:
             self._log(f"Error al obtener posiciones activas en OKX: {e}", "ERROR")
             okx_pos_map = None

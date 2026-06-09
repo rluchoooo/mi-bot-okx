@@ -132,12 +132,28 @@ def build_dashboard() -> str:
         else:
             shield_html = '<span class="badge badge-stale">⏳ PENDIENTE</span>'
 
+        # Live OKX Position Mark Price & PnL
+        pos_data = getattr(runtime, "last_positions", {}).get(t.symbol, {})
+        mark_px = float(pos_data.get("markPx", 0)) if pos_data and pos_data.get("markPx") else 0.0
+        upl_val = float(pos_data.get("upl", 0)) if pos_data and pos_data.get("upl") else 0.0
+        
+        if mark_px > 0:
+            price_lbl = _fmt(mark_px)
+            sign = "+" if upl_val >= 0 else ""
+            pnl_cls = "pos" if upl_val >= 0 else "neg"
+            pnl_lbl = f'<span class="{pnl_cls}"><b>{sign}{upl_val:.2f} USDT</b></span>'
+        else:
+            price_lbl = '<span class="muted">⏳ Cargando...</span>'
+            pnl_lbl = '<span class="muted">⏳ Cargando...</span>'
+
         pos_rows += f"""
 <tr>
-  <td style="color: #f59e0b !important;">{sym}</td>
+  <td style="color: #ff9f43 !important; font-weight: 900;">{sym}</td>
   <td class="{side_cls}">{side_lbl}</td>
   <td><span class="tag tag-strat">{strat_lbl}</span></td>
   <td>{_fmt(t.entry_price)}</td>
+  <td style="font-weight: 800;">{price_lbl}</td>
+  <td>{pnl_lbl}</td>
   <td><span class="warn-sl">{sl_lbl}</span></td>
   <td>{tp_lbl}</td>
   <td>{shield_html}</td>
@@ -145,7 +161,7 @@ def build_dashboard() -> str:
 </tr>"""
 
     if not pos_rows:
-        pos_rows = "<tr><td colspan='8' class='muted center'>Sin posiciones abiertas. Escaneando mercado...</td></tr>"
+        pos_rows = "<tr><td colspan='10' class='muted center'>Sin posiciones abiertas. Escaneando mercado...</td></tr>"
 
     # ── Closed trade rows ──
     trade_rows = ""
@@ -252,7 +268,7 @@ def build_dashboard() -> str:
     <section class="card positions-card">
       <div class="section-head"><span>MONITOR DE POSICIONES</span><b>{len(open_trades)} ACTIVAS</b></div>
       <table>
-        <thead><tr><th>SÍMBOLO</th><th>LADO</th><th>ESTRATEGIA</th><th>ENTRADA</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>BE / TRAIL</th><th>ESTADO</th></tr></thead>
+        <thead><tr><th>SÍMBOLO</th><th>LADO</th><th>ESTRATEGIA</th><th>ENTRADA</th><th>PRECIO ACT.</th><th>PNL ACT.</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>BE / TRAIL</th><th>ESTADO</th></tr></thead>
         <tbody>{pos_rows}</tbody>
       </table>
     </section>

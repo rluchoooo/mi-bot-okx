@@ -39,8 +39,25 @@ if os.getenv("BOT_AUTOSTART", "true").lower() == "true":
 def _esc(s: str) -> str:
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-def _fmt(v: float, decimals: int = 6) -> str:
-    return f"{v:.{decimals}f}"
+def _fmt(v: float, decimals: int = None) -> str:
+    if v is None:
+        return "0.00"
+    if decimals is not None:
+        return f"{v:.{decimals}f}"
+    val = abs(v)
+    if val == 0:
+        return "0.00"
+    if val >= 100:
+        d = 2
+    elif val >= 1:
+        d = 4
+    elif val >= 0.01:
+        d = 6
+    elif val >= 0.0001:
+        d = 8
+    else:
+        d = 10
+    return f"{v:.{d}f}"
 
 def _pnl_cls(v: float) -> str:
     return "pos" if v >= 0 else "neg"

@@ -108,42 +108,44 @@ def build_dashboard() -> str:
         side_lbl  = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sym       = _esc(t.symbol.replace("-USDT-SWAP", "USDT"))
         sl_lbl    = _fmt(t.trail_sl or t.sl_price)
+        tp_lbl    = f'<span class="tp-col">{_fmt(t.tp_price)}</span>' if t.tp_price else '<span class="badge badge-ts">🎯 TRAILING</span>'
         
         status_val = (t.status.value if hasattr(t.status, "value") else str(t.status)).upper()
         if status_val == "OPEN":
             status_html = '<span class="badge badge-open">🔵 OPEN</span>'
-            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
-            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
         elif status_val == "BREAKEVEN" or t.be_activated:
             status_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
-            sl_html = f'<span class="pos">{sl_lbl}</span> <span class="badge badge-be" style="padding: 2px 6px; font-size: 9px; margin-left: 4px;">🛡️ BE</span>'
-            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
         elif status_val == "TRAILING" or t.trail_activated:
             status_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
-            sl_html = f'<span class="warn-sl">{sl_lbl}</span> <span class="badge badge-ts" style="padding: 2px 6px; font-size: 9px; margin-left: 4px;">🎯 TRAIL</span>'
-            tp_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
         elif status_val == "EARLY_EXIT":
             status_html = '<span class="badge badge-shock">⚡ EARLY EXIT</span>'
-            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
-            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
         else:
             status_html = f'<span class="badge badge-stale">{status_val}</span>'
-            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
-            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
+
+        # BE / TRAIL Column Logic
+        if t.trail_activated or status_val == "TRAILING":
+            trail_val = t.trail_sl or t.sl_price
+            shield_html = f'<span class="badge badge-ts">🎯 TS: {_fmt(trail_val)}</span>'
+        elif t.be_activated or status_val == "BREAKEVEN":
+            be_val = t.sl_price
+            shield_html = f'<span class="badge badge-be">🛡️ BE: {_fmt(be_val)}</span>'
+        else:
+            shield_html = '<span class="badge badge-stale">⏳ PENDIENTE</span>'
 
         pos_rows += f"""
 <tr>
-  <td>{sym}</td>
+  <td style="color: #f59e0b !important;">{sym}</td>
   <td class="{side_cls}">{side_lbl}</td>
   <td><span class="tag tag-strat">{strat_lbl}</span></td>
   <td>{_fmt(t.entry_price)}</td>
-  <td>{sl_html}</td>
-  <td>{tp_html}</td>
+  <td><span class="warn-sl">{sl_lbl}</span></td>
+  <td>{tp_lbl}</td>
+  <td>{shield_html}</td>
   <td>{status_html}</td>
 </tr>"""
 
     if not pos_rows:
-        pos_rows = "<tr><td colspan='7' class='muted center'>Sin posiciones abiertas. Escaneando mercado...</td></tr>"
+        pos_rows = "<tr><td colspan='8' class='muted center'>Sin posiciones abiertas. Escaneando mercado...</td></tr>"
 
     # ── Closed trade rows ──
     trade_rows = ""
@@ -173,7 +175,7 @@ def build_dashboard() -> str:
         strat  = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), "?")
         trade_rows += f"""
 <tr>
-  <td>{sym}</td>
+  <td style="color: #f59e0b !important;">{sym}</td>
   <td class="{side_cls}">{side_lbl}</td>
   <td><span class="tag tag-strat">{strat}</span></td>
   <td>{_fmt(t.entry_price)}</td>
@@ -250,17 +252,17 @@ def build_dashboard() -> str:
     <section class="card positions-card">
       <div class="section-head"><span>MONITOR DE POSICIONES</span><b>{len(open_trades)} ACTIVAS</b></div>
       <table>
-        <thead><tr><th>SÍMBOLO</th><th>LADO</th><th>ESTRAT.</th><th>ENTRADA</th><th>STOP</th><th>TAKE PROFIT</th><th>ESTADO</th></tr></thead>
+        <thead><tr><th>SÍMBOLO</th><th>LADO</th><th>ESTRATEGIA</th><th>ENTRADA</th><th>STOP LOSS</th><th>TAKE PROFIT</th><th>BE / TRAIL</th><th>ESTADO</th></tr></thead>
         <tbody>{pos_rows}</tbody>
       </table>
     </section>
     <section class="card">
       <div class="section-head"><span>CICLO DE VIDA</span></div>
       <div class="lifecycle-legend">
-        <div>🔵 <b>OPEN</b> – Buscando recorrido</div>
-        <div>🛡️ <b>BREAKEVEN</b> – SL en entrada +$1.60</div>
-        <div>🎯 <b>TRAILING</b> – Persiguiendo precio</div>
-        <div>⚡ <b>EARLY EXIT</b> – Estructura fallida</div>
+        <div>🔵 <b class="badge badge-open">OPEN</b> <span>Buscando recorrido</span></div>
+        <div>🛡️ <b class="badge badge-be">BREAKEVEN</b> <span>SL en entrada +$1.60</span></div>
+        <div>🎯 <b class="badge badge-ts">TRAILING</b> <span>Persiguiendo precio</span></div>
+        <div>⚡ <b class="badge badge-shock">EARLY EXIT</b> <span>Estructura fallida</span></div>
       </div>
       <div class="label" style="margin-top:18px">RENDIMIENTO</div>
       <div class="bar"><span style="width:{win_bar_pct:.1f}%"></span></div>
@@ -298,59 +300,317 @@ APP_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #070913; --panel: rgba(17, 21, 38, 0.75); --panel-2: rgba(22, 27, 48, 0.9);
-  --line: rgba(255, 255, 255, 0.08); --text: #e2e8f0; --title: #ffffff;
-  --green: #00ff88; --red: #ff2a55; --cyan: #00e5ff;
-  --purple: #a67cff; --muted: #94a3b8; --warn: #ffb74d;
+  --bg: #000000;
+  --panel: #080912;
+  --panel-2: #05060b;
+  --line: rgba(255, 255, 255, 0.15);
+  --text: #ffffff;
+  --title: #ffffff;
+  --green: #00ff88;
+  --red: #ff2a55;
+  --cyan: #00e5ff;
+  --purple: #a67cff;
+  --muted: #cbd5e1;
+  --warn: #ffb74d;
 }
-body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit', sans-serif; color: var(--text); max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
-.terminal-shell { max-width: 100%; margin: 0 auto; padding: 24px 48px; }
-.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; padding: 20px 30px; background: linear-gradient(90deg, rgba(14,17,31,0.9), rgba(20,25,46,0.9)); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); border-bottom: 3px solid var(--cyan); }
-.brand { display:flex; gap:20px; align-items:center; }
-.bolt { width:56px; height:56px; background:linear-gradient(135deg,var(--purple),var(--cyan)); border-radius:16px; display:grid; place-items:center; font-size:28px; font-weight:900; color: white; box-shadow: 0 0 20px rgba(0,229,255,0.4); }
-.brand-name { font-size:28px; font-weight:900; letter-spacing:.02em; color: var(--title); text-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-.badges { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
-.badges span { background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.2); border-radius:8px; padding:4px 10px; font-size:11px; font-weight:700; color:white; text-transform: uppercase; letter-spacing: 0.05em; }
-.status-pill { padding:12px 28px; border-radius:999px; font-size:15px; font-weight:900; border:2px solid; letter-spacing: 0.05em; text-transform: uppercase; color: white; }
-.status-pill.ok   { border-color:var(--green); background: rgba(0,255,136,0.1); box-shadow: 0 0 20px rgba(0,255,136,0.3) inset, 0 0 15px rgba(0,255,136,0.3); }
-.status-pill.warn { border-color:var(--warn);  background: rgba(255,183,77,0.1); box-shadow: 0 0 20px rgba(255,183,77,0.3) inset, 0 0 15px rgba(255,183,77,0.3); }
-.shield-bar { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; margin: 20px 0; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-.shield-active { border: 1px solid var(--red); background: rgba(255, 23, 68, 0.1); box-shadow: 0 0 20px rgba(255, 23, 68, 0.3); }
-.shield-label { font-size: 11px; font-weight: 800; color: var(--text); letter-spacing: 0.1em; }
-.shield-active .shield-label { color: var(--red); }
-.shield-status { font-size: 13px; font-weight: 700; color: var(--cyan); }
-.grid { display:grid; gap:24px; }
-.hero-grid  { grid-template-columns: 1fr 1fr 1.2fr; }
-.stat-grid  { grid-template-columns: repeat(4,1fr); margin-top:24px; }
-.main-grid  { grid-template-columns: 2fr 1fr; margin-top:24px; }
-.lower-grid { grid-template-columns: 1.3fr 1fr; margin-top:24px; }
 
-.card, .stat-card {
-  background: var(--panel);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--line); border-radius: 20px; padding: 28px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.4); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s, border-color 0.25s;
-  position: relative; overflow: hidden;
+/* Force solid black background on the entire Gradio app and components */
+html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
+  background-color: #000000 !important;
+  background: #000000 !important;
+  font-family: 'Outfit', sans-serif;
+  color: #ffffff !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
-.card::before { content: ""; position: absolute; top:0; left:0; width:100%; height:4px; background: linear-gradient(90deg, var(--purple), var(--cyan)); opacity: 0.6; }
+
+.terminal-shell {
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 24px 48px;
+}
+
+/* Premium Header Bar */
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding: 24px 32px;
+  background: #080912 !important;
+  border: 2px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.7);
+  border-bottom: 5px solid #00e5ff !important;
+}
+
+.brand {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.bolt {
+  width: 56px;
+  height: 56px;
+  background: linear-gradient(135deg, var(--purple), var(--cyan));
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  font-weight: 900;
+  color: white;
+  box-shadow: 0 0 20px rgba(0,229,255,0.4);
+}
+
+.brand-name {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: .02em;
+  color: #ffffff !important;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+.badges {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.badges span {
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.badges span:nth-child(1) {
+  background: rgba(166, 124, 255, 0.15) !important;
+  border: 1px solid #a67cff !important;
+  color: #a67cff !important;
+}
+.badges span:nth-child(2) {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border: 1px solid #00e5ff !important;
+  color: #00e5ff !important;
+}
+.badges span:nth-child(3) {
+  background: rgba(0, 255, 136, 0.15) !important;
+  border: 1px solid #00ff88 !important;
+  color: #00ff88 !important;
+}
+.badges span:nth-child(4) {
+  background: rgba(255, 183, 77, 0.15) !important;
+  border: 1px solid #ffb74d !important;
+  color: #ffb74d !important;
+}
+
+.status-pill {
+  padding: 12px 28px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 900;
+  border: 2px solid;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: white;
+}
+
+.status-pill.ok {
+  border-color: var(--green) !important;
+  background: rgba(0,255,136,0.15) !important;
+  box-shadow: 0 0 20px rgba(0,255,136,0.3) inset, 0 0 15px rgba(0,255,136,0.3) !important;
+}
+
+.status-pill.warn {
+  border-color: var(--warn) !important;
+  background: rgba(255,183,77,0.15) !important;
+  box-shadow: 0 0 20px rgba(255,183,77,0.3) inset, 0 0 15px rgba(255,183,77,0.3) !important;
+}
+
+/* Bitcoin Macro Shield Bar */
+.shield-bar {
+  background: #080912 !important;
+  border: 2px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px;
+  margin: 20px 0;
+  padding: 14px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.6);
+}
+
+.shield-active {
+  border: 2px solid #ff2a55 !important;
+  background: rgba(255, 42, 85, 0.1) !important;
+  box-shadow: 0 0 25px rgba(255, 42, 85, 0.3) !important;
+}
+
+.shield-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: #ffffff !important;
+  letter-spacing: 0.1em;
+}
+
+.shield-active .shield-label {
+  color: #ff2a55 !important;
+  text-shadow: 0 0 8px rgba(255, 42, 85, 0.4);
+}
+
+.shield-status {
+  font-size: 14px;
+  font-weight: 900;
+  color: #00e5ff !important;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.4);
+}
+
+.shield-active .shield-status {
+  color: #ff2a55 !important;
+  text-shadow: 0 0 8px rgba(255, 42, 85, 0.4);
+}
+
+/* Grid layout rules */
+.grid {
+  display: grid;
+  gap: 24px;
+}
+.hero-grid { grid-template-columns: 1fr 1fr 1.2fr; }
+.stat-grid { grid-template-columns: repeat(4,1fr); margin-top: 24px; }
+.main-grid { grid-template-columns: 2fr 1fr; margin-top: 24px; }
+.lower-grid { grid-template-columns: 1.3fr 1fr; margin-top: 24px; }
+
+/* Premium Card and Stat Card styling */
+.card, .stat-card {
+  background: #080912 !important;
+  border: 2px solid rgba(255, 255, 255, 0.15) !important;
+  border-radius: 20px !important;
+  padding: 28px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.6) !important;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s, border-color 0.25s;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 5px;
+  background: linear-gradient(90deg, var(--purple), var(--cyan));
+}
+
 .card:hover, .stat-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 15px 35px rgba(0, 229, 255, 0.15);
-  border-color: rgba(0, 229, 255, 0.35);
+  box-shadow: 0 15px 35px rgba(0, 229, 255, 0.18) !important;
+  border-color: rgba(0, 229, 255, 0.4) !important;
 }
-.label, th, small { color:var(--text); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform: uppercase; }
-.big { font-size:40px; font-weight:900; margin-top:16px; color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
-.sub { color:var(--muted); font-size:14px; margin-top:10px; }
-.mini { margin-top:16px; font-size:14px; font-weight:900; color: white; }
-.kv { display:flex; justify-content:space-between; margin-top:14px; font-size:14px; font-weight:700; color: white; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
-.kv b { color:var(--cyan); }
-.stat-card { min-height:120px; display:flex; flex-direction:column; justify-content:center; }
-.stat-card div { font-size:13px; font-weight:800; margin-bottom:12px; color: var(--text); }
-.stat-card strong { display:block; font-size:32px; font-weight:900; color: white; }
-.stat-card small { color:var(--muted); display:block; margin-top:8px; font-size:12px; }
 
-/* Specific and powerful overrides to ensure green and red colors in tables and dashboard cards are bright and visible */
+/* Headings and labels styling */
+.label {
+  color: #00e5ff !important;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  letter-spacing: .12em !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+  margin-bottom: 12px;
+}
+
+.big {
+  font-size: 42px !important;
+  font-weight: 900 !important;
+  margin-top: 16px;
+  color: #ffffff !important;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+.sub {
+  color: #cbd5e1 !important;
+  font-size: 14px;
+  margin-top: 10px;
+  font-weight: 500;
+  opacity: 0.95;
+}
+
+.mini {
+  margin-top: 16px;
+  font-size: 14px;
+  font-weight: 900;
+  color: white;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 800;
+  color: white;
+  border-bottom: 1px dashed var(--line);
+  padding-bottom: 8px;
+}
+
+.kv b {
+  color: var(--cyan);
+}
+
+.strategy-card .kv span {
+  color: #ffffff !important;
+  font-size: 13px;
+}
+
+/* Stat Cards accent customization */
+.stat-card {
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-left: 5px solid rgba(255, 255, 255, 0.2) !important;
+}
+
+.stat-card div {
+  font-size: 13px;
+  font-weight: 900;
+  margin-bottom: 12px;
+  color: #ffffff !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stat-card strong {
+  display: block;
+  font-size: 34px !important;
+  font-weight: 900 !important;
+  color: white;
+}
+
+.stat-card small {
+  color: #cbd5e1 !important;
+  display: block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stat-card.accent-a { border-left: 5px solid #00e5ff !important; }
+.stat-card.accent-a strong { color: #00e5ff !important; text-shadow: 0 0 10px rgba(0, 229, 255, 0.4) !important; }
+
+.stat-card.accent-b { border-left: 5px solid #a67cff !important; }
+.stat-card.accent-b strong { color: #a67cff !important; text-shadow: 0 0 10px rgba(166, 124, 255, 0.4) !important; }
+
+.stat-card.accent-c { border-left: 5px solid #ffb74d !important; }
+.stat-card.accent-c strong.pos { color: #00ff88 !important; text-shadow: 0 0 10px rgba(0, 255, 136, 0.4) !important; }
+.stat-card.accent-c small.neg { color: #ff2a55 !important; font-size: 14px !important; font-weight: 900 !important; text-shadow: 0 0 10px rgba(255, 42, 85, 0.4) !important; }
+
+/* Neon Color Overrides for PnL text and positive/negative states */
 .terminal-shell table td.pos,
 .terminal-shell table td.pos *,
 .terminal-shell .pos,
@@ -358,6 +618,7 @@ body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit
   color: #00ff88 !important;
   text-shadow: 0 0 10px rgba(0, 255, 136, 0.3) !important;
 }
+
 .terminal-shell table td.neg,
 .terminal-shell table td.neg *,
 .terminal-shell .neg,
@@ -366,18 +627,87 @@ body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit
   text-shadow: 0 0 10px rgba(255, 42, 85, 0.3) !important;
 }
 
-.warn { color:var(--warn) !important; }
-.warn-sl { color:var(--red) !important; font-weight:900; }
-.tp-col  { color:var(--cyan) !important; font-weight:900; }
-.center { text-align:center; }
-.muted  { color:var(--muted); }
-.section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
-.section-head b { color:var(--cyan); background:rgba(0,229,255,.1); padding:6px 12px; border-radius:999px; font-size:12px; border: 1px solid rgba(0,229,255,0.3); }
-table { width:100%; border-collapse:collapse; }
-th, td { padding:16px 12px; border-bottom:1px solid rgba(255,255,255,.05); text-align:left; font-size:14px; font-weight:700; color: white; }
-thead { background:rgba(255,255,255,0.03); }
-.tag { background:rgba(255,255,255,.1); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:11px; font-weight:800; color: white; }
-.tag-strat { color:white; background: var(--purple); border-color:var(--purple); box-shadow: 0 0 10px rgba(166,124,255,0.4); }
+.terminal-shell .warn { color: #ffb74d !important; }
+.terminal-shell .warn-sl { color: #ff3366 !important; font-weight: 900 !important; text-shadow: 0 0 8px rgba(255, 51, 102, 0.3) !important; }
+.terminal-shell .tp-col { color: #00e5ff !important; font-weight: 900 !important; text-shadow: 0 0 8px rgba(0, 229, 255, 0.3) !important; }
+
+.center { text-align: center; }
+.muted { color: #cbd5e1 !important; opacity: 0.8; }
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.section-head span {
+  font-size: 18px;
+  font-weight: 900;
+  color: #ffffff !important;
+  letter-spacing: 0.05em;
+  text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
+
+.section-head b {
+  color: #00ff88 !important;
+  background: rgba(0, 255, 136, 0.15) !important;
+  padding: 6px 16px !important;
+  border-radius: 999px !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  border: 1px solid rgba(0, 255, 136, 0.4) !important;
+  text-transform: uppercase;
+}
+
+/* Premium Table Styling */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th {
+  padding: 16px 12px;
+  border-bottom: 2px solid rgba(166, 124, 255, 0.3) !important;
+  text-align: left;
+  font-size: 13px !important;
+  font-weight: 900 !important;
+  color: #a67cff !important; /* purple header text */
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.02) !important;
+}
+
+td {
+  padding: 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  text-align: left;
+  font-size: 14px;
+  font-weight: 700;
+  color: white !important;
+}
+
+/* First Column of tables is Symbol and deserves a beautiful amber styling */
+.terminal-shell table td:first-child {
+  color: #ff9f43 !important;
+  font-weight: 900 !important;
+  text-shadow: 0 0 8px rgba(255, 159, 67, 0.3) !important;
+}
+
+.tag {
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.tag-strat {
+  background: linear-gradient(135deg, #a67cff, #7000ff) !important;
+  border: 1px solid #a67cff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 10px rgba(166, 124, 255, 0.4) !important;
+}
 
 /* Premium Badges styling */
 .badge {
@@ -390,62 +720,181 @@ thead { background:rgba(255,255,255,0.03); }
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border: 1px solid;
+  border: 2px solid !important;
 }
-.badge-tp { background: rgba(0, 255, 136, 0.1) !important; border-color: rgba(0, 255, 136, 0.3) !important; color: #00ff88 !important; }
-.badge-sl { background: rgba(255, 42, 85, 0.1) !important; border-color: rgba(255, 42, 85, 0.3) !important; color: #ff2a55 !important; }
-.badge-be { background: rgba(0, 229, 255, 0.1) !important; border-color: rgba(0, 229, 255, 0.3) !important; color: #00e5ff !important; }
-.badge-ts { background: rgba(166, 124, 255, 0.1) !important; border-color: rgba(166, 124, 255, 0.3) !important; color: #a67cff !important; }
-.badge-shock { background: rgba(255, 183, 77, 0.1) !important; border-color: rgba(255, 183, 77, 0.3) !important; color: #ffb74d !important; }
-.badge-stale { background: rgba(255, 255, 255, 0.05) !important; border-color: rgba(255, 255, 255, 0.15) !important; color: #a0aec0 !important; }
-.badge-open { background: rgba(59, 130, 246, 0.1) !important; border-color: rgba(59, 130, 246, 0.3) !important; color: #3b82f6 !important; }
 
-.lifecycle-legend { display:flex; flex-direction:column; gap:12px; font-size:14px; font-weight:700; color: #ffffff !important; }
-.lifecycle-legend div { padding:12px 16px; background:var(--panel-2); border-radius:12px; border:1px solid var(--line); color: #ffffff !important; }
-.lifecycle-legend div * { color: #ffffff !important; }
-.bar { height:12px; background:#1e243b; border-radius:999px; overflow:hidden; margin:18px 0 24px; }
-.bar span { display:block; height:100%; background:linear-gradient(90deg,var(--green),var(--cyan)); box-shadow: 0 0 10px rgba(0,255,136,0.5); }
-.perf-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-.perf-grid strong { display:block; font-size:26px; margin-top:6px; color: white; }
-.trade-list { display:flex; flex-direction:column; gap:12px; }
-.trade-card {
-  border:1px solid var(--line); border-radius:14px; padding:18px;
-  display:grid; grid-template-columns:48px 1.4fr 1fr auto; align-items:center; gap:16px;
-  background: var(--panel-2); transition: background 0.2s;
+.badge-tp { background: rgba(0, 255, 136, 0.15) !important; border-color: #00ff88 !important; color: #00ff88 !important; }
+.badge-sl { background: rgba(255, 42, 85, 0.15) !important; border-color: #ff2a55 !important; color: #ff2a55 !important; }
+.badge-be { background: rgba(0, 229, 255, 0.15) !important; border-color: #00e5ff !important; color: #00e5ff !important; }
+.badge-ts { background: rgba(166, 124, 255, 0.15) !important; border-color: #a67cff !important; color: #a67cff !important; }
+.badge-shock { background: rgba(255, 183, 77, 0.15) !important; border-color: #ffb74d !important; color: #ffb74d !important; }
+.badge-stale { background: rgba(255, 255, 255, 0.1) !important; border-color: #cbd5e1 !important; color: #cbd5e1 !important; }
+.badge-open { background: rgba(59, 130, 246, 0.15) !important; border-color: #3b82f6 !important; color: #3b82f6 !important; }
+
+/* Lifecycle legend item layouts */
+.lifecycle-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.trade-card:hover { background: rgba(255,255,255,0.05); }
-.coin { width:40px; height:40px; border-radius:10px; display:grid; place-items:center; background:#000; color:white; font-weight:900; font-size:13px; border: 1px solid var(--line); }
-.trade-card small { color:var(--text); display:block; margin-top:6px; font-size: 13px; }
-.empty { color:var(--text); border:2px dashed var(--line); border-radius:14px; padding:24px; font-size:14px; font-weight:800; text-align: center; }
+
+.lifecycle-legend div {
+  padding: 14px 18px !important;
+  background: #0d0f1a !important;
+  border-radius: 12px !important;
+  border: 2px solid rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.lifecycle-legend div span {
+  color: #ffffff !important;
+}
+
+.bar {
+  height: 12px;
+  background: #1e243b;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 18px 0 24px;
+}
+
+.bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, var(--green), var(--cyan));
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+}
+
+.perf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+.perf-grid small {
+  color: #cbd5e1 !important;
+  font-weight: 800;
+}
+
+.perf-grid strong {
+  display: block;
+  font-size: 26px;
+  margin-top: 6px;
+  color: white !important;
+}
+
+/* Premium Terminal Output */
 .terminal {
-  background: #000000; border-radius:16px; border:1px solid rgba(255,255,255,0.1); padding:20px;
-  min-height:300px; max-height:450px; box-shadow: inset 0 5px 20px rgba(0,0,0,0.8);
-  font-family:"Cascadia Mono",Consolas,monospace; color:#00ff88; font-size:13px;
-  line-height:1.8; overflow-y:auto;
+  background: #000000 !important;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.15) !important;
+  padding: 20px;
+  min-height: 300px;
+  max-height: 450px;
+  box-shadow: inset 0 5px 20px rgba(0,0,0,0.8);
+  font-family: "Cascadia Mono", Consolas, monospace;
+  color: #ffffff !important; /* crisply readable logs */
+  font-size: 13px;
+  line-height: 1.8;
+  overflow-y: auto;
 }
-.term-prefix { color:var(--cyan); font-weight:900; text-shadow: 0 0 8px rgba(0,229,255,0.6); }
-.strategy-card .kv span { color:var(--text); font-size:13px; }
-.control-row { display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap; }
-.control-row button { font-family: 'Outfit', sans-serif !important; font-weight: 700 !important; letter-spacing: 0.05em !important; text-transform: uppercase !important; border-radius: 12px !important; }
+
+.term-prefix {
+  color: #00ff88 !important;
+  font-weight: 900;
+  text-shadow: 0 0 8px rgba(0,255,136,0.4);
+  margin-right: 6px;
+}
+
+/* Gradio Controls and Buttons styling */
+.control-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.control-row button {
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 900 !important;
+  font-size: 13px !important;
+  letter-spacing: 0.07em !important;
+  text-transform: uppercase !important;
+  border-radius: 12px !important;
+  padding: 14px 24px !important;
+  border: 2px solid transparent !important;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  color: #ffffff !important;
+  cursor: pointer !important;
+}
+
+.btn-start {
+  background: rgba(0, 255, 136, 0.15) !important;
+  border-color: #00ff88 !important;
+  box-shadow: 0 0 15px rgba(0, 255, 136, 0.2) !important;
+}
+.btn-start:hover {
+  background: #00ff88 !important;
+  color: #000000 !important;
+  box-shadow: 0 0 25px rgba(0, 255, 136, 0.5) !important;
+}
+
+.btn-stop {
+  background: rgba(255, 42, 85, 0.15) !important;
+  border-color: #ff2a55 !important;
+  box-shadow: 0 0 15px rgba(255, 42, 85, 0.2) !important;
+}
+.btn-stop:hover {
+  background: #ff2a55 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 25px rgba(255, 42, 85, 0.5) !important;
+}
+
+.btn-refresh {
+  background: rgba(0, 229, 255, 0.15) !important;
+  border-color: #00e5ff !important;
+  box-shadow: 0 0 15px rgba(0, 229, 255, 0.2) !important;
+}
+.btn-refresh:hover {
+  background: #00e5ff !important;
+  color: #000000 !important;
+  box-shadow: 0 0 25px rgba(0, 229, 255, 0.5) !important;
+}
+
+.btn-shield {
+  background: rgba(166, 124, 255, 0.15) !important;
+  border-color: #a67cff !important;
+  box-shadow: 0 0 15px rgba(166, 124, 255, 0.2) !important;
+}
+.btn-shield:hover {
+  background: #a67cff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 25px rgba(166, 124, 255, 0.5) !important;
+}
+
+.btn-reset {
+  background: rgba(255, 183, 77, 0.15) !important;
+  border-color: #ffb74d !important;
+  box-shadow: 0 0 15px rgba(255, 183, 77, 0.2) !important;
+}
+.btn-reset:hover {
+  background: #ffb74d !important;
+  color: #000000 !important;
+  box-shadow: 0 0 25px rgba(255, 183, 77, 0.5) !important;
+}
+
 @media (max-width:1100px) {
-  .hero-grid, .main-grid, .lower-grid { grid-template-columns:1fr; }
-  .stat-grid { grid-template-columns:1fr 1fr; }
+  .hero-grid, .main-grid, .lower-grid { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width:700px) {
-  .stat-grid { grid-template-columns:1fr; }
-  .trade-card { grid-template-columns:1fr; }
-  table { min-width:700px; }
-  .positions-card { overflow-x:auto; }
-}
-@media (max-width:1100px) {
-  .hero-grid, .main-grid, .lower-grid { grid-template-columns:1fr; }
-  .stat-grid { grid-template-columns:1fr 1fr; }
-}
-@media (max-width:700px) {
-  .stat-grid { grid-template-columns:1fr; }
-  .trade-card { grid-template-columns:1fr; }
-  table { min-width:700px; }
-  .positions-card { overflow-x:auto; }
+  .stat-grid { grid-template-columns: 1fr; }
+  table { min-width: 700px; }
+  .positions-card { overflow-x: auto; }
 }
 """
 
@@ -459,11 +908,11 @@ runtime.start()
 
 with gr.Blocks(title="Quantum V10 Pro Terminal", css=APP_CSS, fill_width=True) as demo:
     with gr.Row(elem_classes=["control-row"]):
-        start_btn   = gr.Button("▶️ Iniciar Bot",  variant="primary")
-        stop_btn    = gr.Button("⏹️ Detener")
-        refresh_btn = gr.Button("🔄 Actualizar")
-        shield_btn  = gr.Button("🛡️ Desbloquear Escudo")
-        reset_btn   = gr.Button("🗑️ Resetear Stats", variant="stop")
+        start_btn   = gr.Button("▶️ Iniciar Bot",  variant="primary", elem_classes=["btn-start"])
+        stop_btn    = gr.Button("⏹️ Detener", elem_classes=["btn-stop"])
+        refresh_btn = gr.Button("🔄 Actualizar", elem_classes=["btn-refresh"])
+        shield_btn  = gr.Button("🛡️ Desbloquear Escudo", elem_classes=["btn-shield"])
+        reset_btn   = gr.Button("🗑️ Resetear Stats", variant="stop", elem_classes=["btn-reset"])
 
     output = gr.HTML(build_dashboard())
 

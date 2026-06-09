@@ -83,10 +83,15 @@ def evaluate(
     # ── 0. Stop Loss / Take Profit inicial Hit ──────────────────────
     sl_hit = (price <= current_sl) if side == "long" else (price >= current_sl)
     if sl_hit:
+        reason = "STOP_LOSS_HIT"
+        if trail_activated:
+            reason = "TRAILING_HIT"
+        elif be_activated:
+            reason = "BREAKEVEN_HIT"
         decisions.append(LifecycleDecision(
             action=Action.CLOSE_MARKET,
-            reason="STOP_LOSS_HIT",
-            log_message=f"🛑 Stop Loss alcanzado: precio={price:.6f} sl={current_sl:.6f}",
+            reason=reason,
+            log_message=f"🛑 {reason.replace('_', ' ')} alcanzado: precio={price:.6f} sl={current_sl:.6f}",
         ))
         return decisions
 

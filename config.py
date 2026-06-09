@@ -15,7 +15,7 @@ MAX_POSITION_VAL_USDT = Decimal("800.0")   # Salvaguarda: nominal máximo en USD
 
 # ── SCANNER ───────────────────────────────────────────────────────────
 SCAN_INTERVAL_SECONDS = 15
-TOP_COINS_LIMIT       = 50
+TOP_COINS_LIMIT       = 30
 MIN_VOLUME_24H        = 500_000       # USDT mínimo de volumen 24h
 LIMIT_ORDER_OFFSET_PCT = Decimal("0.0002")  # ±0.02% offset en precio límite
 

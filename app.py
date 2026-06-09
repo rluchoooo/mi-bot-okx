@@ -86,14 +86,25 @@ def build_dashboard() -> str:
     # ── Position rows ──
     pos_rows = ""
     for t in open_trades:
-        stat_icon = STATUS_ICON.get(t.status.value if hasattr(t.status, "value") else str(t.status), "🔵")
         strat_lbl = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), t.strategy)
         side_cls  = "pos" if (t.side.value if hasattr(t.side, "value") else t.side) == "long" else "neg"
         side_lbl  = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sym       = _esc(t.symbol.replace("-USDT-SWAP", "USDT"))
         sl_lbl    = _fmt(t.trail_sl or t.sl_price)
         tp_lbl    = _fmt(t.tp_price) if t.tp_price else "TRAILING"
-        status_lbl = (t.status.value if hasattr(t.status, "value") else str(t.status))
+        
+        status_val = (t.status.value if hasattr(t.status, "value") else str(t.status)).upper()
+        if status_val == "OPEN":
+            status_html = '<span class="badge badge-open">🔵 OPEN</span>'
+        elif status_val == "BREAKEVEN":
+            status_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
+        elif status_val == "TRAILING":
+            status_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
+        elif status_val == "EARLY_EXIT":
+            status_html = '<span class="badge badge-shock">⚡ EARLY EXIT</span>'
+        else:
+            status_html = f'<span class="badge badge-stale">{status_val}</span>'
+
         pos_rows += f"""
 <tr>
   <td>{sym}</td>
@@ -102,7 +113,7 @@ def build_dashboard() -> str:
   <td>{_fmt(t.entry_price)}</td>
   <td class="warn-sl">{sl_lbl}</td>
   <td class="tp-col">{tp_lbl}</td>
-  <td>{stat_icon} {status_lbl}</td>
+  <td>{status_html}</td>
 </tr>"""
 
     if not pos_rows:
@@ -116,7 +127,23 @@ def build_dashboard() -> str:
         side_cls = "pos" if (t.side.value if hasattr(t.side, "value") else t.side) == "long" else "neg"
         side_lbl = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sign  = "+" if pnl >= 0 else ""
-        reason = _esc((t.close_reason or "").upper())
+        
+        reason_raw = (t.close_reason or "").upper()
+        if "TAKE_PROFIT" in reason_raw:
+            reason_html = '<span class="badge badge-tp">✅ TAKE PROFIT</span>'
+        elif "TRAILING" in reason_raw:
+            reason_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
+        elif "BREAKEVEN" in reason_raw:
+            reason_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
+        elif "STOP_LOSS" in reason_raw:
+            reason_html = '<span class="badge badge-sl">🛑 STOP LOSS</span>'
+        elif "SHOCK" in reason_raw or "KILL" in reason_raw:
+            reason_html = '<span class="badge badge-shock">⚡ SHOCK CUT</span>'
+        elif "STALE" in reason_raw:
+            reason_html = '<span class="badge badge-stale">🗑️ STALE</span>'
+        else:
+            reason_html = f'<span class="badge badge-stale">{_esc(reason_raw)}</span>'
+            
         strat  = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), "?")
         trade_rows += f"""
 <tr>
@@ -125,11 +152,12 @@ def build_dashboard() -> str:
   <td><span class="tag tag-strat">{strat}</span></td>
   <td>{_fmt(t.entry_price)}</td>
   <td>{_fmt(t.close_price or 0)}</td>
-  <td><strong>{reason}</strong></td>
+  <td>{reason_html}</td>
   <td class="{_pnl_cls(pnl)}"><b>{sign}{pnl:.2f} USDT</b></td>
 </tr>"""
 
     if not trade_rows:
+
         trade_rows = "<tr><td colspan='7' class='muted center'>Sin operaciones cerradas desde este arranque.</td></tr>"
 
     # ── Terminal lines ──
@@ -244,8 +272,8 @@ APP_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #090b14; --panel: #111526; --panel-2: #161b30;
-  --line: rgba(255,255,255,.1); --text: #a0aec0; --title: #ffffff;
+  --bg: #070913; --panel: rgba(17, 21, 38, 0.7); --panel-2: rgba(22, 27, 48, 0.85);
+  --line: rgba(255, 255, 255, 0.08); --text: #a0aec0; --title: #ffffff;
   --green: #00ff88; --red: #ff2a55; --cyan: #00e5ff;
   --purple: #a67cff; --muted: #64748b; --warn: #ffb74d;
 }
@@ -270,16 +298,23 @@ body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit
 .stat-grid  { grid-template-columns: repeat(4,1fr); margin-top:24px; }
 .main-grid  { grid-template-columns: 2fr 1fr; margin-top:24px; }
 .lower-grid { grid-template-columns: 1.3fr 1fr; margin-top:24px; }
+
 .card, .stat-card {
   background: var(--panel);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line); border-radius: 20px; padding: 28px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.4); transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.4); transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s, border-color 0.25s;
   position: relative; overflow: hidden;
 }
-.card::before { content: ""; position: absolute; top:0; left:0; width:100%; height:4px; background: linear-gradient(90deg, var(--purple), var(--cyan)); opacity: 0.5; }
-.card:hover, .stat-card:hover { transform: translateY(-3px); box-shadow: 0 15px 40px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.2); }
+.card::before { content: ""; position: absolute; top:0; left:0; width:100%; height:4px; background: linear-gradient(90deg, var(--purple), var(--cyan)); opacity: 0.6; }
+.card:hover, .stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 15px 35px rgba(0, 229, 255, 0.15);
+  border-color: rgba(0, 229, 255, 0.35);
+}
 .label, th, small { color:var(--text); font-size:12px; font-weight:700; letter-spacing:.08em; text-transform: uppercase; }
-.big { font-size:40px; font-weight:900; margin-top:16px; color: white; }
+.big { font-size:40px; font-weight:900; margin-top:16px; color: white; text-shadow: 0 2px 10px rgba(0,0,0,0.3); }
 .sub { color:var(--muted); font-size:14px; margin-top:10px; }
 .mini { margin-top:16px; font-size:14px; font-weight:900; color: white; }
 .kv { display:flex; justify-content:space-between; margin-top:14px; font-size:14px; font-weight:700; color: white; border-bottom: 1px dashed var(--line); padding-bottom: 6px; }
@@ -288,8 +323,23 @@ body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit
 .stat-card div { font-size:13px; font-weight:800; margin-bottom:12px; color: var(--text); }
 .stat-card strong { display:block; font-size:32px; font-weight:900; color: white; }
 .stat-card small { color:var(--muted); display:block; margin-top:8px; font-size:12px; }
-.pos { color:var(--green) !important; text-shadow: 0 0 10px rgba(0,255,136,0.3); }
-.neg { color:var(--red) !important; text-shadow: 0 0 10px rgba(255,42,85,0.3); }
+
+/* Specific and powerful overrides to ensure green and red colors in tables and dashboard cards are bright and visible */
+.terminal-shell table td.pos,
+.terminal-shell table td.pos *,
+.terminal-shell .pos,
+.terminal-shell .pos * {
+  color: #00ff88 !important;
+  text-shadow: 0 0 10px rgba(0, 255, 136, 0.3) !important;
+}
+.terminal-shell table td.neg,
+.terminal-shell table td.neg *,
+.terminal-shell .neg,
+.terminal-shell .neg * {
+  color: #ff2a55 !important;
+  text-shadow: 0 0 10px rgba(255, 42, 85, 0.3) !important;
+}
+
 .warn { color:var(--warn) !important; }
 .warn-sl { color:var(--red) !important; font-weight:900; }
 .tp-col  { color:var(--cyan) !important; font-weight:900; }
@@ -302,6 +352,28 @@ th, td { padding:16px 12px; border-bottom:1px solid rgba(255,255,255,.05); text-
 thead { background:rgba(255,255,255,0.03); }
 .tag { background:rgba(255,255,255,.1); border:1px solid var(--line); border-radius:6px; padding:4px 8px; font-size:11px; font-weight:800; color: white; }
 .tag-strat { color:white; background: var(--purple); border-color:var(--purple); box-shadow: 0 0 10px rgba(166,124,255,0.4); }
+
+/* Premium Badges styling */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+}
+.badge-tp { background: rgba(0, 255, 136, 0.1) !important; border-color: rgba(0, 255, 136, 0.3) !important; color: #00ff88 !important; }
+.badge-sl { background: rgba(255, 42, 85, 0.1) !important; border-color: rgba(255, 42, 85, 0.3) !important; color: #ff2a55 !important; }
+.badge-be { background: rgba(0, 229, 255, 0.1) !important; border-color: rgba(0, 229, 255, 0.3) !important; color: #00e5ff !important; }
+.badge-ts { background: rgba(166, 124, 255, 0.1) !important; border-color: rgba(166, 124, 255, 0.3) !important; color: #a67cff !important; }
+.badge-shock { background: rgba(255, 183, 77, 0.1) !important; border-color: rgba(255, 183, 77, 0.3) !important; color: #ffb74d !important; }
+.badge-stale { background: rgba(255, 255, 255, 0.05) !important; border-color: rgba(255, 255, 255, 0.15) !important; color: #a0aec0 !important; }
+.badge-open { background: rgba(59, 130, 246, 0.1) !important; border-color: rgba(59, 130, 246, 0.3) !important; color: #3b82f6 !important; }
+
 .lifecycle-legend { display:flex; flex-direction:column; gap:12px; font-size:14px; font-weight:700; color: white; }
 .lifecycle-legend div { padding:12px 16px; background:var(--panel-2); border-radius:12px; border:1px solid var(--line); }
 .bar { height:12px; background:#1e243b; border-radius:999px; overflow:hidden; margin:18px 0 24px; }

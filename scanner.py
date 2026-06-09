@@ -822,9 +822,12 @@ class QuantumBotRuntime:
                                 if t.tp_price and abs(real_exit - t.tp_price) / t.tp_price < 0.01:
                                     close_reason = "TAKE_PROFIT_HIT"
                                 elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
-                                    close_reason = "STOP_LOSS_HIT"
+                                    close_reason = "TRAILING_HIT"
                                 elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
-                                    close_reason = "STOP_LOSS_HIT"
+                                    if t.status == TradeStatus.BREAKEVEN or t.be_activated:
+                                        close_reason = "BREAKEVEN_HIT"
+                                    else:
+                                        close_reason = "STOP_LOSS_HIT"
                                     
                                 self._log(f"[{t.symbol}] 🔄 Cierre nativo detectado en OKX: Entrada={real_entry} | Salida={real_exit} | PnL={real_pnl} USDT | Razón={close_reason}")
                                 

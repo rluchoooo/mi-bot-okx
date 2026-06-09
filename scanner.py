@@ -261,6 +261,7 @@ class QuantumBotRuntime:
         self._lock           = threading.Lock()
         self._log_buffer:    list[str] = []
         self._instruments:   dict[str, dict] = {}
+        self.compliance_restricted = set()  # Local set of compliance restricted symbols (error 51155)
         self._pending_orders: dict[int, tuple[str, float]] = {}  # trade_id → (ord_id, ts)
         self.current_exchange_balance: float = 0.0
 
@@ -597,7 +598,7 @@ class QuantumBotRuntime:
         candidates: list[Signal] = []
         for tick in universe:
             iid = tick["instId"]
-            if iid in active_syms or iid in cdwn_syms or iid not in self._instruments:
+            if iid in active_syms or iid in cdwn_syms or iid in self.compliance_restricted or iid not in self._instruments:
                 continue
             try:
                 df_1h, df_15m, df_5m = await asyncio.gather(
@@ -705,8 +706,13 @@ class QuantumBotRuntime:
             await notifier.notify_open(iid, sig.side, sig.strategy,
                                        float(sig.entry_price), float(sl), float(tp), float(qty))
         except Exception as e:
-            self._log(f"[{iid}] Error abriendo trade: {e}", "ERROR")
-            await notifier.notify_error(f"open_trade {iid}", str(e))
+            err_str = str(e)
+            if "51155" in err_str:
+                self.compliance_restricted.add(iid)
+                self._log(f"[{iid}] Símbolo con restricciones de cumplimiento OKX (51155). Agregado a lista de exclusión local.", "WARN")
+            else:
+                self._log(f"[{iid}] Error abriendo trade: {e}", "ERROR")
+                await notifier.notify_error(f"open_trade {iid}", str(e))
 
     # ── Stale Order Loop ──────────────────────────────────────────────
 

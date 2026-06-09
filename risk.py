@@ -13,6 +13,7 @@ from config import (
     LEVERAGE,
     SMC_TRAIL_ACTIVATION, SMC_TRAIL_RETAIN,
     ST_TRAIL_ACTIVATION, ST_TRAIL_RETAIN,
+    MAX_POSITION_VAL_USDT,
 )
 
 # Re-export for backward compatibility
@@ -42,12 +43,18 @@ def compute_qty(
 ) -> Decimal:
     """
     qty = risk_usd / (|entry - sl| × ct_val)
+    Capped such that qty * ct_val * entry <= MAX_POSITION_VAL_USDT.
     Redondeado hacia abajo al lot_sz del instrumento.
     """
     sl_distance = abs(entry - sl)
     if sl_distance == 0:
         return Decimal("0")
     qty_raw = risk_usd / (sl_distance * ct_val)
+    
+    # Safeguard: cap nominal value at MAX_POSITION_VAL_USDT
+    max_qty = MAX_POSITION_VAL_USDT / (entry * ct_val)
+    qty_raw = min(qty_raw, max_qty)
+    
     return qty_raw.quantize(lot_sz, rounding=ROUND_DOWN)
 
 

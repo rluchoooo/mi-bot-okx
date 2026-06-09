@@ -88,6 +88,10 @@ def evaluate(
             reason = "TRAILING_HIT"
         elif be_activated:
             reason = "BREAKEVEN_HIT"
+        else:
+            is_win_or_scratch = (price >= entry) if side == "long" else (price <= entry)
+            if is_win_or_scratch:
+                reason = "BREAKEVEN_HIT"
         decisions.append(LifecycleDecision(
             action=Action.CLOSE_MARKET,
             reason=reason,

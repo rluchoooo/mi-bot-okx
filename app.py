@@ -180,7 +180,10 @@ def build_dashboard() -> str:
         elif "BREAKEVEN" in reason_raw:
             reason_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
         elif "STOP_LOSS" in reason_raw:
-            reason_html = '<span class="badge badge-sl">🛑 STOP LOSS</span>'
+            if pnl >= 0:
+                reason_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
+            else:
+                reason_html = '<span class="badge badge-sl">🛑 STOP LOSS</span>'
         elif "SHOCK" in reason_raw or "KILL" in reason_raw:
             reason_html = '<span class="badge badge-shock">⚡ SHOCK CUT</span>'
         elif "STALE" in reason_raw:

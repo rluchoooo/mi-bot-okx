@@ -821,12 +821,24 @@ class QuantumBotRuntime:
                                 
                                 # Determine close reason
                                 close_reason = "OKX_NATIVE_CLOSE"
+                                side_str = t.side.value if hasattr(t.side, "value") else str(t.side)
+                                is_win_or_scratch = (real_exit >= t.entry_price) if side_str == "long" else (real_exit <= t.entry_price)
+                                
                                 if t.tp_price and abs(real_exit - t.tp_price) / t.tp_price < 0.01:
                                     close_reason = "TAKE_PROFIT_HIT"
                                 elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
                                     close_reason = "TRAILING_HIT"
                                 elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
                                     if t.status == TradeStatus.BREAKEVEN or t.be_activated:
+                                        close_reason = "BREAKEVEN_HIT"
+                                    elif t.status == TradeStatus.TRAILING or t.trail_activated:
+                                        close_reason = "TRAILING_HIT"
+                                    elif is_win_or_scratch:
+                                        close_reason = "BREAKEVEN_HIT"
+                                    else:
+                                        close_reason = "STOP_LOSS_HIT"
+                                else:
+                                    if is_win_or_scratch:
                                         close_reason = "BREAKEVEN_HIT"
                                     else:
                                         close_reason = "STOP_LOSS_HIT"

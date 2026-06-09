@@ -164,7 +164,7 @@ class QuantumSMCStrategy:
         v3 = df_5m.iloc[-1]
         
         vol_3_sma = vol_sma.iloc[-1]
-        if v3["volume"] <= 1.25 * vol_3_sma:
+        if v3["volume"] <= 0.80 * vol_3_sma:
             return None
             
         atr_val = Decimal(str(atr.iloc[-1]))

@@ -107,7 +107,9 @@ class Cooldown(Base):
 
     @property
     def is_active(self) -> bool:
-        return datetime.now(timezone.utc) < self.until
+        now = datetime.utcnow()
+        until = self.until.replace(tzinfo=None) if self.until else now
+        return now < until
 
 
 class TradeEvent(Base):

@@ -64,7 +64,7 @@ SUPERTREND_PERIOD = 10
 
 # ── FILTRO BTC (Escudo Macro) ─────────────────────────────────────────
 BTC_MAX_VOLATILITY_PCT    = 0.02
-BTC_BLOCK_SECONDS         = 10800   # 3 horas
+BTC_BLOCK_SECONDS         = 7200   # 2 horas
 BTC_REMINDER_INTERVAL_SEC = 60       # Log de recordatorio cada 60s mientras bloqueado
 
 # ── COOLDOWN / ÓRDENES ────────────────────────────────────────────────

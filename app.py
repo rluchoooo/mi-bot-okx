@@ -91,19 +91,28 @@ def build_dashboard() -> str:
         side_lbl  = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sym       = _esc(t.symbol.replace("-USDT-SWAP", "USDT"))
         sl_lbl    = _fmt(t.trail_sl or t.sl_price)
-        tp_lbl    = _fmt(t.tp_price) if t.tp_price else "TRAILING"
         
         status_val = (t.status.value if hasattr(t.status, "value") else str(t.status)).upper()
         if status_val == "OPEN":
             status_html = '<span class="badge badge-open">🔵 OPEN</span>'
-        elif status_val == "BREAKEVEN":
+            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
+            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
+        elif status_val == "BREAKEVEN" or t.be_activated:
             status_html = '<span class="badge badge-be">🛡️ BREAKEVEN</span>'
-        elif status_val == "TRAILING":
+            sl_html = f'<span class="pos">{sl_lbl}</span> <span class="badge badge-be" style="padding: 2px 6px; font-size: 9px; margin-left: 4px;">🛡️ BE</span>'
+            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
+        elif status_val == "TRAILING" or t.trail_activated:
             status_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
+            sl_html = f'<span class="warn-sl">{sl_lbl}</span> <span class="badge badge-ts" style="padding: 2px 6px; font-size: 9px; margin-left: 4px;">🎯 TRAIL</span>'
+            tp_html = '<span class="badge badge-ts">🎯 TRAILING</span>'
         elif status_val == "EARLY_EXIT":
             status_html = '<span class="badge badge-shock">⚡ EARLY EXIT</span>'
+            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
+            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
         else:
             status_html = f'<span class="badge badge-stale">{status_val}</span>'
+            sl_html = f'<span class="warn-sl">{sl_lbl}</span>'
+            tp_html = f'<span class="tp-col">{_fmt(t.tp_price) if t.tp_price else "TRAILING"}</span>'
 
         pos_rows += f"""
 <tr>
@@ -111,8 +120,8 @@ def build_dashboard() -> str:
   <td class="{side_cls}">{side_lbl}</td>
   <td><span class="tag tag-strat">{strat_lbl}</span></td>
   <td>{_fmt(t.entry_price)}</td>
-  <td class="warn-sl">{sl_lbl}</td>
-  <td class="tp-col">{tp_lbl}</td>
+  <td>{sl_html}</td>
+  <td>{tp_html}</td>
   <td>{status_html}</td>
 </tr>"""
 
@@ -272,10 +281,10 @@ APP_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #070913; --panel: rgba(17, 21, 38, 0.7); --panel-2: rgba(22, 27, 48, 0.85);
-  --line: rgba(255, 255, 255, 0.08); --text: #a0aec0; --title: #ffffff;
+  --bg: #070913; --panel: rgba(17, 21, 38, 0.75); --panel-2: rgba(22, 27, 48, 0.9);
+  --line: rgba(255, 255, 255, 0.08); --text: #e2e8f0; --title: #ffffff;
   --green: #00ff88; --red: #ff2a55; --cyan: #00e5ff;
-  --purple: #a67cff; --muted: #64748b; --warn: #ffb74d;
+  --purple: #a67cff; --muted: #94a3b8; --warn: #ffb74d;
 }
 body, .gradio-container { background: var(--bg) !important; font-family: 'Outfit', sans-serif; color: var(--text); max-width: 100% !important; padding: 0 !important; margin: 0 !important; }
 .terminal-shell { max-width: 100%; margin: 0 auto; padding: 24px 48px; }
@@ -374,8 +383,9 @@ thead { background:rgba(255,255,255,0.03); }
 .badge-stale { background: rgba(255, 255, 255, 0.05) !important; border-color: rgba(255, 255, 255, 0.15) !important; color: #a0aec0 !important; }
 .badge-open { background: rgba(59, 130, 246, 0.1) !important; border-color: rgba(59, 130, 246, 0.3) !important; color: #3b82f6 !important; }
 
-.lifecycle-legend { display:flex; flex-direction:column; gap:12px; font-size:14px; font-weight:700; color: white; }
-.lifecycle-legend div { padding:12px 16px; background:var(--panel-2); border-radius:12px; border:1px solid var(--line); }
+.lifecycle-legend { display:flex; flex-direction:column; gap:12px; font-size:14px; font-weight:700; color: #ffffff !important; }
+.lifecycle-legend div { padding:12px 16px; background:var(--panel-2); border-radius:12px; border:1px solid var(--line); color: #ffffff !important; }
+.lifecycle-legend div * { color: #ffffff !important; }
 .bar { height:12px; background:#1e243b; border-radius:999px; overflow:hidden; margin:18px 0 24px; }
 .bar span { display:block; height:100%; background:linear-gradient(90deg,var(--green),var(--cyan)); box-shadow: 0 0 10px rgba(0,255,136,0.5); }
 .perf-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }

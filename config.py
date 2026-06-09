@@ -45,7 +45,7 @@ ATR_MULTIPLIER_SL = Decimal("2.0")
 # Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
 # ── BREAKEVEN & TRAILING PROFILES ─────────────────────────────────────
-BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Compartido: Activa al 40%
+BREAKEVEN_ACTIVATION_PCT = Decimal("0.37")   # Compartido: Activa al 37%
 BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Compartido: Asegura 15%
 
 # Perfil SMC (Asfixia Rápida)
@@ -53,8 +53,8 @@ SMC_TRAIL_ACTIVATION = Decimal("0.80")
 SMC_TRAIL_RETAIN     = Decimal("0.65")
 
 # Perfil Supertrend (Tendencia Extendida)
-ST_TRAIL_ACTIVATION  = Decimal("0.90")
-ST_TRAIL_RETAIN      = Decimal("0.75")
+ST_TRAIL_ACTIVATION  = Decimal("0.85")
+ST_TRAIL_RETAIN      = Decimal("0.70")
 TRAIL_RETRY_SECONDS  = 10                    # Reintento si exchange rechaza orden
 
 # ── SUPERTREND ────────────────────────────────────────────────────────
@@ -63,7 +63,7 @@ SUPERTREND_PERIOD = 10
 
 # ── FILTRO BTC (Escudo Macro) ─────────────────────────────────────────
 BTC_MAX_VOLATILITY_PCT    = 0.02
-BTC_BLOCK_SECONDS         = 10_800   # 3 horas
+BTC_BLOCK_SECONDS         = 7200   # 2 horas
 BTC_REMINDER_INTERVAL_SEC = 60       # Log de recordatorio cada 60s mientras bloqueado
 
 # ── COOLDOWN / ÓRDENES ────────────────────────────────────────────────

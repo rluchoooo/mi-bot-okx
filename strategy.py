@@ -13,7 +13,6 @@ class Signal:
     entry_price: Decimal
     atr_5m: Decimal
     sl_price: Optional[Decimal] = None
-    structural_sl: Optional[Decimal] = None
     tp_price: Optional[Decimal] = None
     reason: str = ""
     score: float = 1.0
@@ -256,7 +255,6 @@ class SMCPDHSweepReversal:
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        structural_sl=Decimal(str(sh)) if sh is not None else None,
                         reason=f"Liquidity Sweep Top | Tgt={target:.4f}", score=1.0
                     )
 
@@ -268,7 +266,6 @@ class SMCPDHSweepReversal:
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        structural_sl=Decimal(str(sl)) if sl is not None else None,
                         reason=f"Liquidity Sweep Bottom | Tgt={target:.4f}", score=1.0
                     )
         return None
@@ -288,7 +285,6 @@ class SMCFVGMitigation:
         cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_fvg, bear_fvg = TrueSMCAnalyzer.find_unmitigated_fvg(df_15m, lookback=30)
-        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
@@ -299,7 +295,6 @@ class SMCFVGMitigation:
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    structural_sl=Decimal(str(sl)) if sl is not None else None,
                     reason=f"FVG Mitigated Long | Zone {fvg_bottom:.4f}-{fvg_top:.4f}", score=1.0
                 )
                 
@@ -309,7 +304,6 @@ class SMCFVGMitigation:
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    structural_sl=Decimal(str(sh)) if sh is not None else None,
                     reason=f"FVG Mitigated Short | Zone {fvg_bottom:.4f}-{fvg_top:.4f}", score=1.0
                 )
         return None
@@ -329,7 +323,6 @@ class SMCOrderblockBounce:
         cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_ob, bear_ob = TrueSMCAnalyzer.find_orderblock(df_15m, lookback=40)
-        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
@@ -340,7 +333,6 @@ class SMCOrderblockBounce:
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    structural_sl=Decimal(str(sl)) if sl is not None else None,
                     reason=f"OB Retest Long | OB High {ob_high:.4f}", score=1.0
                 )
                 
@@ -350,7 +342,6 @@ class SMCOrderblockBounce:
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    structural_sl=Decimal(str(sh)) if sh is not None else None,
                     reason=f"OB Retest Short | OB Low {ob_low:.4f}", score=1.0
                 )
         return None
@@ -372,7 +363,6 @@ class SMCAMDBreakout:
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         recent_window = df_15m.iloc[-15:-2] 
         trigger = df_15m.iloc[-2]
-        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         
         range_high = recent_window['high'].max()
         range_low = recent_window['low'].min()
@@ -384,7 +374,6 @@ class SMCAMDBreakout:
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        structural_sl=Decimal(str(sh)) if sh is not None else None,
                         reason=f"AMD Sweep High -> Distribute Short", score=1.0
                     )
             if trigger['low'] < range_low and trigger['close'] > range_low:
@@ -392,7 +381,6 @@ class SMCAMDBreakout:
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        structural_sl=Decimal(str(sl)) if sl is not None else None,
                         reason=f"AMD Sweep Low -> Distribute Long", score=1.0
                     )
         return None

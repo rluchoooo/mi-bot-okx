@@ -179,7 +179,8 @@ def build_dashboard() -> str:
             else:
                 t_side = str(t.side).lower()
                 
-            pos = runtime.last_positions.get((t.symbol, t_side), {})
+            norm_symbol = t.symbol.replace("-USDT-SWAP", "USDT")
+            pos = runtime.last_positions.get((norm_symbol, t_side), {})
             if pos:
                 try:
                     upl_raw = pos.get("upl", "") or "0"

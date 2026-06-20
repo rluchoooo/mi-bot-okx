@@ -1244,7 +1244,7 @@ class QuantumBotRuntime:
         # Fetch actual positions from OKX
         try:
             okx_pos = await client.get_positions()
-            okx_pos_map = {(p["instId"], p.get("posSide", "long").lower()): p for p in okx_pos}
+            okx_pos_map = {(p["instId"].replace("-USDT-SWAP", "USDT"), p.get("posSide", "long").lower()): p for p in okx_pos}
             self.last_positions = okx_pos_map
             self._log(f"Synced {len(okx_pos_map)} positions: {list(okx_pos_map.keys())[:3]}...", "SYSTEM")
         except Exception as e:

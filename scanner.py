@@ -1082,7 +1082,8 @@ class QuantumBotRuntime:
         atr = float(sig.atr_5m)
         
         from risk_manager import risk_manager
-        levels = risk_manager.calculate_levels(entry_price, atr, sig.side, float(ct_val), float(lot_sz), sig.strategy)
+        structural_sl = float(sig.structural_sl) if getattr(sig, "structural_sl", None) is not None else None
+        levels = risk_manager.calculate_levels(entry_price, atr, sig.side, float(ct_val), float(lot_sz), sig.strategy, structural_sl=structural_sl)
         
         sl = float(_round_tick(Decimal(str(levels["sl_price"]))))
         

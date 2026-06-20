@@ -223,9 +223,16 @@ class SMCPDHSweepReversal:
     NAME = "SMC_LIQ_SWEEP"
 
     def signal(self, symbol: str, df_1h: pd.DataFrame, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> Optional[Signal]:
-        if len(df_15m) < 55: return None
+        if len(df_15m) < 55 or len(df_1h) < 200: return None
         
         df_1h_time = df_1h.copy()
+        df_1h_time['ema200'] = _ema(df_1h_time['close'], 200)
+        df_1h_time['ema21'] = _ema(df_1h_time['close'], 21)
+        df_1h_time['ema9'] = _ema(df_1h_time['close'], 9)
+        trigger_1h = df_1h_time.iloc[-2]
+        cond_1h_long = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
+        cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
+        
         try:
             df_1h_time.index = pd.to_datetime(df_1h_time['timestamp'], unit='ms')
             pdh, pdl = TrueSMCAnalyzer.calc_pdh_pdl(df_1h_time)
@@ -244,7 +251,7 @@ class SMCPDHSweepReversal:
             if trigger['high'] > target and trigger['close'] < target:
                 body = abs(trigger['close'] - trigger['open'])
                 wick = trigger['high'] - max(trigger['close'], trigger['open'])
-                if wick > body * 0.8 and trigger['close'] < trigger['open']:
+                if wick > body * 0.8 and trigger['close'] < trigger['open'] and cond_1h_short:
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -255,7 +262,7 @@ class SMCPDHSweepReversal:
             if trigger['low'] < target and trigger['close'] > target:
                 body = abs(trigger['close'] - trigger['open'])
                 wick = min(trigger['close'], trigger['open']) - trigger['low']
-                if wick > body * 0.8 and trigger['close'] > trigger['open']:
+                if wick > body * 0.8 and trigger['close'] > trigger['open'] and cond_1h_long:
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -267,14 +274,22 @@ class SMCFVGMitigation:
     NAME = "SMC_FVG_MITIG"
 
     def signal(self, symbol: str, df_1h: pd.DataFrame, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> Optional[Signal]:
-        if len(df_15m) < 50: return None
+        if len(df_15m) < 50 or len(df_1h) < 200: return None
+        
+        df_1h_time = df_1h.copy()
+        df_1h_time['ema200'] = _ema(df_1h_time['close'], 200)
+        df_1h_time['ema21'] = _ema(df_1h_time['close'], 21)
+        df_1h_time['ema9'] = _ema(df_1h_time['close'], 9)
+        trigger_1h = df_1h_time.iloc[-2]
+        cond_1h_long = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
+        cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_fvg, bear_fvg = TrueSMCAnalyzer.find_unmitigated_fvg(df_15m, lookback=30)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
         
-        if bull_fvg and trigger['close'] > ema100:
+        if bull_fvg and trigger['close'] > ema100 and cond_1h_long:
             fvg_bottom, fvg_top = bull_fvg
             if trigger['low'] < fvg_top and trigger['close'] > trigger['open']:
                 return Signal(
@@ -283,7 +298,7 @@ class SMCFVGMitigation:
                     reason=f"FVG Mitigated Long | Zone {fvg_bottom:.4f}-{fvg_top:.4f}", score=1.0
                 )
                 
-        if bear_fvg and trigger['close'] < ema100:
+        if bear_fvg and trigger['close'] < ema100 and cond_1h_short:
             fvg_bottom, fvg_top = bear_fvg
             if trigger['high'] > fvg_bottom and trigger['close'] < trigger['open']:
                 return Signal(
@@ -297,14 +312,22 @@ class SMCOrderblockBounce:
     NAME = "SMC_OB_RETEST"
 
     def signal(self, symbol: str, df_1h: pd.DataFrame, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> Optional[Signal]:
-        if len(df_15m) < 50: return None
+        if len(df_15m) < 50 or len(df_1h) < 200: return None
+        
+        df_1h_time = df_1h.copy()
+        df_1h_time['ema200'] = _ema(df_1h_time['close'], 200)
+        df_1h_time['ema21'] = _ema(df_1h_time['close'], 21)
+        df_1h_time['ema9'] = _ema(df_1h_time['close'], 9)
+        trigger_1h = df_1h_time.iloc[-2]
+        cond_1h_long = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
+        cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_ob, bear_ob = TrueSMCAnalyzer.find_orderblock(df_15m, lookback=40)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
         
-        if bull_ob is not None and trigger['close'] > ema100:
+        if bull_ob is not None and trigger['close'] > ema100 and cond_1h_long:
             ob_high = bull_ob['high']
             if trigger['low'] <= ob_high and trigger['close'] > trigger['open']:
                 return Signal(
@@ -313,7 +336,7 @@ class SMCOrderblockBounce:
                     reason=f"OB Retest Long | OB High {ob_high:.4f}", score=1.0
                 )
                 
-        if bear_ob is not None and trigger['close'] < ema100:
+        if bear_ob is not None and trigger['close'] < ema100 and cond_1h_short:
             ob_low = bear_ob['low']
             if trigger['high'] >= ob_low and trigger['close'] < trigger['open']:
                 return Signal(
@@ -327,7 +350,15 @@ class SMCAMDBreakout:
     NAME = "SMC_AMD_PO3"
 
     def signal(self, symbol: str, df_1h: pd.DataFrame, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> Optional[Signal]:
-        if len(df_15m) < 30: return None
+        if len(df_15m) < 30 or len(df_1h) < 200: return None
+        
+        df_1h_time = df_1h.copy()
+        df_1h_time['ema200'] = _ema(df_1h_time['close'], 200)
+        df_1h_time['ema21'] = _ema(df_1h_time['close'], 21)
+        df_1h_time['ema9'] = _ema(df_1h_time['close'], 9)
+        trigger_1h = df_1h_time.iloc[-2]
+        cond_1h_long = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
+        cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         recent_window = df_15m.iloc[-15:-2] 
@@ -339,14 +370,14 @@ class SMCAMDBreakout:
         
         if rango_size < atr * 2:
             if trigger['high'] > range_high and trigger['close'] < range_high:
-                if trigger['close'] < trigger['open']:
+                if trigger['close'] < trigger['open'] and cond_1h_short:
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
                         reason=f"AMD Sweep High -> Distribute Short", score=1.0
                     )
             if trigger['low'] < range_low and trigger['close'] > range_low:
-                if trigger['close'] > trigger['open']:
+                if trigger['close'] > trigger['open'] and cond_1h_long:
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),

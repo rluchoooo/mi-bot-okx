@@ -125,7 +125,9 @@ def build_dashboard() -> str:
     # ── Position rows ──
     pos_rows = ""
     for t in open_trades:
-        strat_lbl = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), t.strategy)
+        raw_strat = t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy)
+        raw_strat = raw_strat.replace("Strategy.", "")
+        strat_lbl = STRATEGY_SHORT.get(raw_strat, raw_strat)
         side_cls  = "pos" if (t.side.value if hasattr(t.side, "value") else t.side) == "long" else "neg"
         side_lbl  = (t.side.value if hasattr(t.side, "value") else t.side).upper()
         sym       = _esc(t.symbol.replace("-USDT-SWAP", "USDT"))
@@ -166,17 +168,24 @@ def build_dashboard() -> str:
         
         shield_html = f'<div style="display: flex; flex-direction: column; justify-content: center;"><div style="display: flex; align-items: center;">{badge_html}</div>{sltp_html}</div>'
 
-        # Match live_upl by instId directly from last_positions dict values
+        # Match live_upl by dictionary key directly
         live_upl = 0.0
         if hasattr(runtime, "last_positions"):
-            for pos in runtime.last_positions.values():
-                if pos.get("instId") == t.symbol:
-                    try:
-                        upl_raw = pos.get("upl", "") or "0"
-                        live_upl = float(upl_raw) if upl_raw else 0.0
-                    except (ValueError, TypeError):
-                        pass
-                    break
+            t_side = t.side.value if hasattr(t.side, "value") else str(t.side)
+            if hasattr(t.side, "value"):
+                t_side = t.side.value
+            elif isinstance(t.side, str) and "." in t.side:
+                t_side = t.side.split(".")[-1].lower()
+            else:
+                t_side = str(t.side).lower()
+                
+            pos = runtime.last_positions.get((t.symbol, t_side), {})
+            if pos:
+                try:
+                    upl_raw = pos.get("upl", "") or "0"
+                    live_upl = float(upl_raw) if upl_raw else 0.0
+                except (ValueError, TypeError):
+                    pass
                     
         upl_val = live_upl
         sign    = "+" if upl_val >= 0 else ""
@@ -217,7 +226,9 @@ def build_dashboard() -> str:
             else: reason_html = '<span style="color: #ff2a55; font-weight: 800; font-size: 11px;">STOP LOSS</span>'
         else: reason_html = f'<span class="muted" style="font-size: 11px;">{_esc(reason_raw)}</span>'
             
-        strat  = STRATEGY_SHORT.get(t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy), "?")
+        raw_strat = t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy)
+        raw_strat = raw_strat.replace("Strategy.", "")
+        strat  = STRATEGY_SHORT.get(raw_strat, raw_strat)
         pnl_col = _pnl_color(pnl)
         trade_rows += f"""
 <tr style="border-bottom: 1px solid var(--line);">
@@ -432,14 +443,15 @@ def build_dashboard() -> str:
 # ──────────────────────────────────────────────────────────────────────
 
 APP_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;700;900&display=swap');
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0b0c10;
-  --panel: #12141a;
+  --bg: #050508;
+  --bg-gradient: radial-gradient(circle at top center, #111424, #050508 70%);
+  --panel: rgba(18, 20, 26, 0.6);
   --panel-2: #161821;
-  --line: rgba(255, 255, 255, 0.05);
-  --text: #ffffff;
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #e2e8f0;
   --title: #ffffff;
   --green: #00ff88;
   --red: #ff2a55;
@@ -451,9 +463,10 @@ APP_CSS = """
 
 html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
   background-color: var(--bg) !important;
-  background: var(--bg) !important;
+  background-image: var(--bg-gradient) !important;
+  background-attachment: fixed !important;
   font-family: 'Outfit', sans-serif;
-  color: #ffffff !important;
+  color: var(--text) !important;
   max-width: 100% !important;
   padding: 0 !important;
   margin: 0 !important;
@@ -462,17 +475,20 @@ html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
 .terminal-shell {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 40px;
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding: 16px 24px;
-  background: transparent !important;
-  border-bottom: 1px solid var(--line);
+  margin-bottom: 32px;
+  padding: 20px 32px;
+  background: rgba(18, 20, 26, 0.4) !important;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
 .brand {
@@ -517,18 +533,20 @@ html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
 }
 
 .status-pill {
-  padding: 8px 24px;
-  border-radius: 4px;
-  font-size: 12px;
+  padding: 10px 28px;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 900;
   border: 1px solid var(--line);
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   color: white;
   background: var(--panel);
+  text-shadow: 0 0 10px rgba(255,255,255,0.2);
+  backdrop-filter: blur(4px);
 }
 
-.ok { border-color: var(--green); color: var(--green); }
-.warn { border-color: var(--red); color: var(--red); }
+.ok { border-color: rgba(0,255,136,0.5); color: var(--green); box-shadow: 0 0 15px rgba(0,255,136,0.1) inset; }
+.warn { border-color: rgba(255,42,85,0.5); color: var(--red); box-shadow: 0 0 15px rgba(255,42,85,0.1) inset; }
 
 .grid {
   display: grid;
@@ -542,9 +560,17 @@ html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
 .card, .stat-card {
   background: var(--panel) !important;
   border: 1px solid var(--line) !important;
-  border-radius: 8px !important;
-  padding: 24px;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+  border-radius: 16px !important;
+  padding: 28px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+  backdrop-filter: blur(10px);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+}
+
+.card:hover, .stat-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.15) !important;
+  box-shadow: 0 12px 40px rgba(0,229,255,0.05) !important;
 }
 
 .center-content {
@@ -601,20 +627,29 @@ html, body, .gradio-container, .main-container, .gradio-container-3-50-2 {
 
 table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
   text-align: left;
 }
 
 th {
   color: var(--muted);
-  font-weight: 800;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  font-weight: 900;
+  padding: 16px 24px;
+  border-bottom: 2px solid var(--line);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 11px;
 }
 
 td {
-  padding: 12px 0;
+  padding: 16px 24px;
+  transition: background 0.2s;
+}
+
+tr:hover td {
+  background: rgba(255,255,255,0.02);
 }
 
 .bar {

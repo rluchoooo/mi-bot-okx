@@ -837,9 +837,13 @@ class QuantumBotRuntime:
                     existing = db.query(Trade).filter(Trade.symbol == sym, Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).first()
                     if not existing:
                         pos_side = p.get("posSide", "").lower()
-                        side = TradeSide.LONG if pos_side == "long" else TradeSide.SHORT
+                        qty_raw = float(p.get("pos", 0))
+                        if pos_side == "net":
+                            side = TradeSide.LONG if qty_raw >= 0 else TradeSide.SHORT
+                        else:
+                            side = TradeSide.LONG if pos_side == "long" else TradeSide.SHORT
                         entry = float(p.get("avgPx", 0))
-                        qty = float(p.get("pos", 0))
+                        qty = abs(qty_raw)
                         lever = int(p.get("lever", 10))
                         
                         # Calculate ATR-based SL/TP levels using risk_manager
@@ -1244,7 +1248,13 @@ class QuantumBotRuntime:
         # Fetch actual positions from OKX
         try:
             okx_pos = await client.get_positions()
-            okx_pos_map = {(p["instId"].replace("-USDT-SWAP", "USDT"), p.get("posSide", "long").lower()): p for p in okx_pos}
+            def _get_side(p):
+                ps = p.get("posSide", "").lower()
+                if ps == "net":
+                    return "long" if float(p.get("pos", "0")) >= 0 else "short"
+                return "long" if ps == "long" else "short"
+
+            okx_pos_map = {(p["instId"], _get_side(p)): p for p in okx_pos}
             self.last_positions = okx_pos_map
             self._log(f"Synced {len(okx_pos_map)} positions: {list(okx_pos_map.keys())[:3]}...", "SYSTEM")
         except Exception as e:

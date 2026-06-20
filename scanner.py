@@ -1300,9 +1300,9 @@ class QuantumBotRuntime:
                                 elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
                                     close_reason = "TRAILING_HIT"
                                 elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
-                                    if t.status == TradeStatus.BREAKEVEN or t.be_activated:
+                                    if t.status == TradeStatus.BREAKEVEN or t.profit_lock_active:
                                         close_reason = "BREAKEVEN_HIT"
-                                    elif t.status == TradeStatus.TRAILING or t.trail_activated:
+                                    elif t.status == TradeStatus.TRAILING or t.trailing_active:
                                         close_reason = "TRAILING_HIT"
                                     elif is_win_or_scratch:
                                         close_reason = "BREAKEVEN_HIT"

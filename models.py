@@ -51,6 +51,7 @@ class Strategy(str, enum.Enum):
     SMC_FVG_MITIG = "SMC_FVG_MITIG"
     SMC_OB_RETEST = "SMC_OB_RETEST"
     SMC_AMD_PO3 = "SMC_AMD_PO3"
+    ST_EMA_REGIME_MTF = "ST_EMA_REGIME_MTF"
 
 
 class Trade(Base):

@@ -1364,10 +1364,10 @@ class QuantumBotRuntime:
                     "tp":          Decimal(str(t.tp_price)) if t.tp_price else None,
                     "atr":         Decimal(str(t.atr or (t.entry_price * 0.008))),
                     "risk":        Decimal(str(t.risk_usd)),
-                    "be_done":     bool(t.be_activated),
-                    "trail_done":  bool(t.trail_activated),
-                    "trail_sl":    Decimal(str(t.trail_sl)) if t.trail_sl else None,
-                    "peak":        Decimal(str(t.peak_price)) if t.peak_price else None,
+                    "be_done":     bool(t.profit_lock_active),
+                    "trail_done":  bool(t.trailing_active),
+                    "trail_sl":    Decimal(str(t.sl_price)) if t.trailing_active else None,
+                    "peak":        Decimal(str(getattr(t, "highest_price" if getattr(t.side, "value", str(t.side)) == "long" else "lowest_price"))) if getattr(t, "highest_price" if getattr(t.side, "value", str(t.side)) == "long" else "lowest_price") else None,
                     "status":      t.status,
                     "opened_at":   t.opened_at,
                     "tp1_done":    bool(getattr(t, "tp1_done", 0) or getattr(t, "tp1_filled", 0)),
@@ -1427,7 +1427,10 @@ class QuantumBotRuntime:
                     with get_session() as db:
                         t = db.query(Trade).filter(Trade.id == td["id"]).first()
                         if t:
-                            t.peak_price = float(new_peak)
+                            if td["side"] == "long":
+                                t.highest_price = float(new_peak)
+                            else:
+                                t.lowest_price = float(new_peak)
                             db.commit()
                 except Exception:
                     pass

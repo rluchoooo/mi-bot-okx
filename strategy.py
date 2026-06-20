@@ -252,6 +252,13 @@ class SMCPDHSweepReversal:
                 body = abs(trigger['close'] - trigger['open'])
                 wick = trigger['high'] - max(trigger['close'], trigger['open'])
                 if wick > body * 0.8 and trigger['close'] < trigger['open'] and cond_1h_short:
+                    # Filtro de SL estructural
+                    if sh is not None:
+                        simulated_sl = trigger['close'] + (atr * 2.0)
+                        if simulated_sl <= sh:
+                            # Rechazar: el SL matemático queda por debajo de la resistencia (muy fácil de cazar)
+                            continue
+
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -263,6 +270,13 @@ class SMCPDHSweepReversal:
                 body = abs(trigger['close'] - trigger['open'])
                 wick = min(trigger['close'], trigger['open']) - trigger['low']
                 if wick > body * 0.8 and trigger['close'] > trigger['open'] and cond_1h_long:
+                    # Filtro de SL estructural
+                    if sl is not None:
+                        simulated_sl = trigger['close'] - (atr * 2.0)
+                        if simulated_sl >= sl:
+                            # Rechazar: el SL matemático queda por encima del soporte (muy fácil de cazar)
+                            continue
+
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -285,6 +299,7 @@ class SMCFVGMitigation:
         cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_fvg, bear_fvg = TrueSMCAnalyzer.find_unmitigated_fvg(df_15m, lookback=30)
+        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
@@ -292,6 +307,12 @@ class SMCFVGMitigation:
         if bull_fvg and trigger['close'] > ema100 and cond_1h_long:
             fvg_bottom, fvg_top = bull_fvg
             if trigger['low'] < fvg_top and trigger['close'] > trigger['open']:
+                # Filtro de SL estructural
+                if sl is not None:
+                    simulated_sl = trigger['close'] - (atr * 2.0)
+                    if simulated_sl >= sl:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -301,6 +322,12 @@ class SMCFVGMitigation:
         if bear_fvg and trigger['close'] < ema100 and cond_1h_short:
             fvg_bottom, fvg_top = bear_fvg
             if trigger['high'] > fvg_bottom and trigger['close'] < trigger['open']:
+                # Filtro de SL estructural
+                if sh is not None:
+                    simulated_sl = trigger['close'] + (atr * 2.0)
+                    if simulated_sl <= sh:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -323,6 +350,7 @@ class SMCOrderblockBounce:
         cond_1h_short = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
         
         bull_ob, bear_ob = TrueSMCAnalyzer.find_orderblock(df_15m, lookback=40)
+        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         trigger = df_15m.iloc[-2]
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         ema100 = _ema(df_15m['close'], EMA_TREND).iloc[-2]
@@ -330,6 +358,12 @@ class SMCOrderblockBounce:
         if bull_ob is not None and trigger['close'] > ema100 and cond_1h_long:
             ob_high = bull_ob['high']
             if trigger['low'] <= ob_high and trigger['close'] > trigger['open']:
+                # Filtro de SL estructural
+                if sl is not None:
+                    simulated_sl = trigger['close'] - (atr * 2.0)
+                    if simulated_sl >= sl:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -339,6 +373,12 @@ class SMCOrderblockBounce:
         if bear_ob is not None and trigger['close'] < ema100 and cond_1h_short:
             ob_low = bear_ob['low']
             if trigger['high'] >= ob_low and trigger['close'] < trigger['open']:
+                # Filtro de SL estructural
+                if sh is not None:
+                    simulated_sl = trigger['close'] + (atr * 2.0)
+                    if simulated_sl <= sh:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -363,6 +403,7 @@ class SMCAMDBreakout:
         atr = _atr(df_15m, ATR_PERIOD).iloc[-2]
         recent_window = df_15m.iloc[-15:-2] 
         trigger = df_15m.iloc[-2]
+        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         
         range_high = recent_window['high'].max()
         range_low = recent_window['low'].min()
@@ -371,6 +412,12 @@ class SMCAMDBreakout:
         if rango_size < atr * 2:
             if trigger['high'] > range_high and trigger['close'] < range_high:
                 if trigger['close'] < trigger['open'] and cond_1h_short:
+                    # Filtro de SL estructural
+                    if sh is not None:
+                        simulated_sl = trigger['close'] + (atr * 2.0)
+                        if simulated_sl <= sh:
+                            return None # Rechazar operación
+
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -378,6 +425,12 @@ class SMCAMDBreakout:
                     )
             if trigger['low'] < range_low and trigger['close'] > range_low:
                 if trigger['close'] > trigger['open'] and cond_1h_long:
+                    # Filtro de SL estructural
+                    if sl is not None:
+                        simulated_sl = trigger['close'] - (atr * 2.0)
+                        if simulated_sl >= sl:
+                            return None # Rechazar operación
+
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
@@ -412,6 +465,7 @@ class SuperTrendEMARegimeMTFPro:
         
         trigger = df_15m.iloc[-2]
         trigger_1h = df_1h.iloc[-2]
+        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         
         # 3. Detectar armado de setup (Regímenes) en ventana de 160 velas
         window_start = max(0, len(df_15m) - 160 - 2)
@@ -445,10 +499,16 @@ class SuperTrendEMARegimeMTFPro:
             cond_1h = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
             
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
+                # Filtro de SL estructural
+                if sl is not None:
+                    simulated_sl = trigger['close'] - (trigger['atr'] * 2.0)
+                    if simulated_sl >= sl:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
-                    entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"Regime Shift Long | ADX={trigger['adx']:.1f}", score=1.0
+                    entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
+                    reason=f"ST Trend {trigger['st_dir']} + EMA Stack", score=1.0
                 )
                 
         # SHORT
@@ -463,12 +523,18 @@ class SuperTrendEMARegimeMTFPro:
             
             # Filtro 1H
             cond_1h = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
-            
+
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
+                # Filtro de SL estructural
+                if sh is not None:
+                    simulated_sl = trigger['close'] + (trigger['atr'] * 2.0)
+                    if simulated_sl <= sh:
+                        return None # Rechazar operación
+
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="limit",
-                    entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"Regime Shift Short | ADX={trigger['adx']:.1f}", score=1.0
+                    entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
+                    reason=f"ST Trend {trigger['st_dir']} + EMA Stack", score=1.0
                 )
                 
         return None

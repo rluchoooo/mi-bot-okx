@@ -190,7 +190,10 @@ def build_dashboard() -> str:
         upl_val = live_upl
         sign    = "+" if upl_val >= 0 else ""
         pnl_col = _pnl_color(upl_val)
-        pnl_lbl = f'<span style="color: {pnl_col} !important; font-weight: 900; text-shadow: 0 0 5px {pnl_col}80;">{sign}{upl_val:.4f}</span>'
+        if not pos:
+            pnl_lbl = f'<span style="color: #ffb74d !important; font-size: 10px;">{t.symbol} | {t_side} NO SYNC</span>'
+        else:
+            pnl_lbl = f'<span style="color: {pnl_col} !important; font-weight: 900; text-shadow: 0 0 5px {pnl_col}80;">{sign}{upl_val:.4f}</span>'
 
         pos_rows += f"""
 <tr style="border-bottom: 1px solid var(--line);">

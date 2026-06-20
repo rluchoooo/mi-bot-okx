@@ -15,8 +15,8 @@ MAX_POSITION_VAL_USDT = Decimal("800.0")   # Salvaguarda: nominal máximo en USD
 
 # ── SCANNER ───────────────────────────────────────────────────────────
 SCAN_INTERVAL_SECONDS = 15
-TOP_COINS_LIMIT       = 30
-MIN_VOLUME_24H        = 500_000       # USDT mínimo de volumen 24h
+TOP_COINS_LIMIT       = 50
+MIN_VOLUME_24H        = 100_000       # USDT mínimo de volumen 24h
 LIMIT_ORDER_OFFSET_PCT = Decimal("0.0002")  # ±0.02% offset en precio límite
 
 # ── SÍMBOLOS EXCLUIDOS ────────────────────────────────────────────────
@@ -34,28 +34,28 @@ RSI_DIV_MIN_DIFF = 1.0      # Diferencia mínima entre pivotes RSI para confirma
 
 ATR_PERIOD  = 14
 ADX_PERIOD  = 14
-ADX_MIN     = 12
+ADX_MIN     = 8
 
 EMA_FAST    = 9
 EMA_MID     = 21
 EMA_SLOW    = 100
-EMA_TREND   = 50             # Usado para el bias 1H/15M en Strategy A
+EMA_TREND   = 100             # Usado para el bias de tendencia macro en la Estrategia B
 
 # ── SL / TP ───────────────────────────────────────────────────────────
 ATR_MULTIPLIER_SL = Decimal("2.0")
-# Take profit is dynamically calculated as 2x SL distance (1:2 ratio)
 
-# ── BREAKEVEN & TRAILING PROFILES ─────────────────────────────────────
-BREAKEVEN_ACTIVATION_PCT = Decimal("0.37")   # Compartido: Activa al 37%
-BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Compartido: Asegura 15%
+BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Se activa al llegar al 40% del objetivo (TP2)
+BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Asegura un 15% de ganancia del objetivo
 
-# Perfil SMC (Asfixia Rápida)
-SMC_TRAIL_ACTIVATION = Decimal("0.80")
-SMC_TRAIL_RETAIN     = Decimal("0.65")
+TP1_RR_MULT              = Decimal("1.2")    # TP1 at 1.2x Risk
+TP1_QTY_PCT              = Decimal("0.30")   # Close 30% of position
 
-# Perfil Supertrend (Tendencia Extendida)
-ST_TRAIL_ACTIVATION  = Decimal("0.85")
-ST_TRAIL_RETAIN      = Decimal("0.70")
+TP2_RR_MULT              = Decimal("2.0")    # TP2 at 2.0x Risk
+TP2_QTY_PCT              = Decimal("0.30")   # Close another 30% of position (leaves 40%)
+
+TRAILING_FIXED_PCT       = Decimal("0.010")  # Trailing distance = 1.0% fijo desde el pico máximo
+
+
 TRAIL_RETRY_SECONDS  = 10                    # Reintento si exchange rechaza orden
 
 # ── SUPERTREND ────────────────────────────────────────────────────────
@@ -68,9 +68,9 @@ BTC_BLOCK_SECONDS         = 7200   # 2 horas
 BTC_REMINDER_INTERVAL_SEC = 60       # Log de recordatorio cada 60s mientras bloqueado
 
 # ── COOLDOWN / ÓRDENES ────────────────────────────────────────────────
-COOLDOWN_MINUTES      = 30
-STALE_ORDER_MINUTES   = 10
-RECONCILE_INTERVAL    = 3
+COOLDOWN_MINUTES      = 60
+STALE_ORDER_MINUTES   = 15
+RECONCILE_INTERVAL    = 1
 RECONCILE_RETRY_SEC   = 10           # Espera entre reintentos en reconcile
 
 # ── TELEGRAM ─────────────────────────────────────────────────────────

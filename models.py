@@ -46,6 +46,11 @@ class TradeSide(str, enum.Enum):
 class Strategy(str, enum.Enum):
     TREND      = "QUANTUM_SMC_V10_PRO"
     DIVERGENCE = "SUPERTREND_PULLBACK_V3"
+    AUTO_ADOPTED = "AUTO_ADOPTED"
+    SMC_LIQ_SWEEP = "SMC_LIQ_SWEEP"
+    SMC_FVG_MITIG = "SMC_FVG_MITIG"
+    SMC_OB_RETEST = "SMC_OB_RETEST"
+    SMC_AMD_PO3 = "SMC_AMD_PO3"
 
 
 class Trade(Base):
@@ -58,25 +63,37 @@ class Trade(Base):
     status      = Column(Enum(TradeStatus), nullable=False, default=TradeStatus.OPEN)
 
     entry_price = Column(Float, nullable=False)
-    qty         = Column(Float, nullable=False)          # contracts
+    position_size = Column(Float, nullable=False)          # contracts (initial)
+    remaining_size = Column(Float, nullable=False, default=0.0) # contracts (current)
     sl_price    = Column(Float, nullable=False)
-    tp_price    = Column(Float, nullable=True)           # None when trailing active
-    atr_5m      = Column(Float, nullable=False)
+    tp_price    = Column(Float, nullable=True)           # TP_FINAL
 
-    # Lifecycle milestones
-    be_activated   = Column(Integer, default=0)          # 0/1 bool
-    trail_activated = Column(Integer, default=0)
-    trail_sl       = Column(Float, nullable=True)        # current trailing stop
-    peak_price     = Column(Float, nullable=True)        # best price since open
-
-    # PnL
+    # Nuevos cálculos
+    atr         = Column(Float, nullable=False)
+    tp1_price   = Column(Float, nullable=True)
+    tp2_price   = Column(Float, nullable=True)
+    profit_lock_price = Column(Float, nullable=True)
+    
+    # State tracking
+    highest_price = Column(Float, nullable=True)
+    lowest_price  = Column(Float, nullable=True)
+    
+    # Flags de gestión
+    tp1_filled         = Column(Integer, default=0) # 0/1 bool
+    tp2_filled         = Column(Integer, default=0) # 0/1 bool
+    profit_lock_active = Column(Integer, default=0) # 0/1 bool
+    trailing_active    = Column(Integer, default=0) # 0/1 bool
+    position_closed    = Column(Integer, default=0) # 0/1 bool
+    
+    # PnL & Metadata
     realized_pnl = Column(Float, nullable=True)
     close_price  = Column(Float, nullable=True)
     close_reason = Column(String(64), nullable=True)
 
-    # Metadata
-    opened_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     closed_at    = Column(DateTime, nullable=True)
+    
     leverage     = Column(Integer, default=10)
     risk_usd     = Column(Float, default=8.0)
 
@@ -87,15 +104,8 @@ class Trade(Base):
         )
 
     @property
-    def tp_distance(self) -> float:
-        """Total distance from entry to original TP."""
-        if self.side == TradeSide.LONG:
-            return self.tp_price_original - self.entry_price
-        return self.entry_price - self.tp_price_original
-
-    @property
     def is_open(self) -> bool:
-        return self.status not in (TradeStatus.CLOSED, TradeStatus.EARLY_EXIT)
+        return self.position_closed == 0
 
 
 class Cooldown(Base):

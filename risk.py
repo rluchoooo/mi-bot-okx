@@ -11,8 +11,6 @@ from config import (
     BREAKEVEN_ACTIVATION_PCT, BREAKEVEN_PROFIT_PCT,
     FIXED_RISK_USDT,
     LEVERAGE,
-    SMC_TRAIL_ACTIVATION, SMC_TRAIL_RETAIN,
-    ST_TRAIL_ACTIVATION, ST_TRAIL_RETAIN,
     MAX_POSITION_VAL_USDT,
 )
 
@@ -23,14 +21,20 @@ BE_LOCK_PCT       = BREAKEVEN_PROFIT_PCT
 
 
 def compute_sl(entry: Decimal, side: str, atr: Decimal) -> Decimal:
-    """Stop Loss = entry ± 2.5 × ATR (Para SMC V10 Pro)."""
-    distance = ATR_MULTIPLIER_SL * atr
+    """Stop Loss = entry ± 2.0 × ATR."""
+    distance = Decimal("2.0") * atr
     return entry - distance if side == "long" else entry + distance
 
 
-def compute_tp(entry: Decimal, sl: Decimal, side: str) -> Decimal:
-    """Take Profit = Ratio 1:2 (2x SL distance)."""
-    distance = abs(entry - sl) * Decimal("2.0")
+def compute_tp1(entry: Decimal, side: str, atr: Decimal) -> Decimal:
+    """Take Profit 1 = 2.5 ATR."""
+    distance = Decimal("2.5") * atr
+    return entry + distance if side == "long" else entry - distance
+
+
+def compute_tp2(entry: Decimal, side: str, atr: Decimal) -> Decimal:
+    """Take Profit 2 = 5.0 ATR."""
+    distance = Decimal("5.0") * atr
     return entry + distance if side == "long" else entry - distance
 
 
@@ -39,31 +43,37 @@ def compute_qty(
     sl: Decimal,
     ct_val: Decimal,
     lot_sz: Decimal,
-    risk_usd: Decimal = FIXED_RISK_USDT,
+    risk_usd: Decimal = Decimal("15.0"),
 ) -> Decimal:
     """
-    qty = risk_usd / (|entry - sl| × ct_val)
-    Capped such that qty * ct_val * entry <= MAX_POSITION_VAL_USDT.
-    Redondeado hacia abajo al lot_sz del instrumento.
+    Calcula el número de contratos garantizando un tamaño nominal fijo:
+    Margen de $15 USD * Apalancamiento 10x = $150 USDT Nominales.
     """
-    sl_distance = abs(entry - sl)
-    if sl_distance == 0:
+    if ct_val == 0 or entry == 0:
         return Decimal("0")
-    qty_raw = risk_usd / (sl_distance * ct_val)
+
+    nominal_size = Decimal("150.0")  # $15 margin * 10x leverage
     
-    # Safeguard: cap nominal value at MAX_POSITION_VAL_USDT
-    max_qty = MAX_POSITION_VAL_USDT / (entry * ct_val)
-    qty_raw = min(qty_raw, max_qty)
+    # qty × ctVal × entry = nominal_size
+    qty_raw = nominal_size / (entry * ct_val)
+    qty_final = qty_raw.quantize(lot_sz, rounding=ROUND_DOWN)
     
-    return qty_raw.quantize(lot_sz, rounding=ROUND_DOWN)
+    # Si el redondeo lo dejó en 0 pero se puede comprar al menos 1 lote
+    if qty_final == 0 and qty_raw > 0:
+        qty_final = lot_sz
+
+    return qty_final
 
 
-def breakeven_sl(entry: Decimal, side: str, tp_dist: Decimal) -> Decimal:
+
+
+def breakeven_sl(entry: Decimal, side: str, atr: Decimal = Decimal("0"), tp_dist: Decimal = Decimal("0")) -> Decimal:
     """
-    SL de breakeven = entrada + (BREAKEVEN_PROFIT_PCT × tp_dist).
-    Asegura un 15% de la distancia total al TP.
+    SL de breakeven = entrada +/- 0.6 ATR.
+    Blindaje mínimo garantizado (15% de 4.0 ATR)
     """
-    lock = BREAKEVEN_PROFIT_PCT * tp_dist
+    BE_ATR_DIST = Decimal("0.6")
+    lock = BE_ATR_DIST * atr if atr > 0 else BREAKEVEN_PROFIT_PCT * tp_dist
     return entry + lock if side == "long" else entry - lock
 
 
@@ -80,6 +90,27 @@ def new_trail_sl(
     max_gain = abs(peak_price - entry)
     retained = max_gain * retain_pct
     candidate = entry + retained if side == "long" else entry - retained
+    return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
+
+
+def new_trail_sl_fixed(
+    peak_price: Decimal,
+    side: str,
+    current_sl: Decimal,
+    atr: Decimal = Decimal("0"),
+) -> Decimal:
+    """
+    Trailing stop a 1.2 ATR de distancia desde el pico máximo.
+    Si ATR = 0 (fallback), usa 1% del precio del pico.
+    El SL nunca retrocede (solo avanza con el precio).
+    """
+    TRAIL_ATR_MULT = Decimal("1.2")
+    if atr > 0:
+        distance = TRAIL_ATR_MULT * atr
+    else:
+        from config import TRAILING_FIXED_PCT
+        distance = peak_price * TRAILING_FIXED_PCT
+    candidate = peak_price - distance if side == "long" else peak_price + distance
     return max(candidate, current_sl) if side == "long" else min(candidate, current_sl)
 
 

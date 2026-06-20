@@ -3,8 +3,17 @@ from sqlalchemy.orm import Session
 from models import get_session, Trade, TradeStatus, Strategy, TradeSide
 from scanner import OKXClient
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 async def sync():
-    client = OKXClient()
+    client = OKXClient(
+        api_key=os.getenv("OKX_API_KEY", ""),
+        api_secret=os.getenv("OKX_API_SECRET", ""),
+        passphrase=os.getenv("OKX_API_PASSPHRASE", ""),
+        simulated=True
+    )
     try:
         positions = await client.get_positions()
     except Exception as e:

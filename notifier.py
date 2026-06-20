@@ -88,6 +88,14 @@ class TelegramNotifier:
             f"Trail SL: <code>{trail_sl:.6f}</code> | TP cancelado"
         )
 
+    async def notify_tp1(self, symbol: str, qty: float, price: float) -> None:
+        await self.send(
+            f"🎯 <b>TOMA DE GANANCIAS PARCIAL (TP1)</b>\n"
+            f"📌 <b>{symbol}</b>\n"
+            f"Vendido el 50% de la posición (<code>{qty}</code> contratos) a <code>{price:.6f}</code>"
+        )
+
+
     async def notify_macro_block(self, reason: str, minutes_remaining: int) -> None:
         await self.send(
             f"🚨 <b>ALARMA MACRO – CORTAFUEGOS ACTIVADO</b>\n"

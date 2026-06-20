@@ -218,41 +218,139 @@ class TrueSMCAnalyzer:
         return bullish_ob, bearish_ob
 
     @staticmethod
-    def volume_confirms_breakout(df: pd.DataFrame, lookback: int = 20) -> dict:
+    def vol_liq_sweep(df: pd.DataFrame, lookback: int = 20) -> dict:
         """
-        Analiza si el volumen confirma la vela de ruptura actual.
-        Un trader profesional siempre verifica:
-        1) Volumen de la vela de señal vs. promedio (debe ser >= 1.4x)
-        2) Tendencia del volumen (¿está aumentando o decayendo?)
-        3) Relación cuerpo/sombra con respaldo de volumen (convicción)
-        
-        Returns: dict con 'confirmed' (bool) y 'ratio' (float)
+        LIQ SWEEP: Barrido de liquidez institucional.
+        El trader busca un SPIKE de volumen en la vela que hace el sweep —
+        señal de que los institucionales cazaron stops y ahora revertirán.
+        Umbral alto: ratio >= 1.8x (debe ser un movimiento agresivo y visible).
+        La vela debe tener mecha larga y cuerpo pequeño (rechazo claro).
         """
         if len(df) < lookback + 2:
-            return {"confirmed": True, "ratio": 1.0}  # sin datos suficientes, no bloquear
-
+            return {"confirmed": True, "ratio": 1.0}
         vols = df['volume'].values
-        trigger_vol = vols[-2]  # vela confirmada (la penúltima)
-        avg_vol = np.mean(vols[-(lookback + 2):-2])  # promedio de las N velas previas
-
+        trigger_vol = vols[-2]
+        avg_vol = np.mean(vols[-(lookback + 2):-2])
         if avg_vol == 0:
             return {"confirmed": True, "ratio": 1.0}
-
         ratio = trigger_vol / avg_vol
-
-        # Tendencia del volumen: las últimas 5 velas ¿suben o bajan?
-        recent_vols = vols[-7:-2]
-        vol_slope = (recent_vols[-1] - recent_vols[0]) / (len(recent_vols) * avg_vol + 1e-9)
-
-        # Convicción: cuerpo grande vs. sombras pequeñas
         c = df.iloc[-2]
         body = abs(c['close'] - c['open'])
-        total_range = c['high'] - c['low'] + 1e-9
-        conviction = body / total_range  # >0.5 = vela de convicción
+        total_range = (c['high'] - c['low']) + 1e-9
+        # Mecha larga = rechazo = body pequeño vs rango total
+        wick_ratio = 1 - (body / total_range)   # >0.5 = mecha dominante
+        confirmed = (ratio >= 1.8) and (wick_ratio >= 0.45)
+        return {"confirmed": confirmed, "ratio": ratio, "wick_ratio": wick_ratio}
 
-        confirmed = (ratio >= 1.4) and (conviction > 0.35)
+    @staticmethod
+    def vol_fvg_mitig(df: pd.DataFrame, lookback: int = 20) -> dict:
+        """
+        FVG MITIGATION: Relleno de imbalance (gap de precio sin negociar).
+        El trader busca que al tocar la zona FVG el volumen sea MODERADO y sostenido
+        (no un spike). Un spike significaría que el precio puede perforar la zona.
+        El precio debe cerrar dentro o rebotar con volumen normal-alto (1.2x a 2.5x).
+        La vela de entrada debe tener convicción (cuerpo > 50% del rango).
+        """
+        if len(df) < lookback + 2:
+            return {"confirmed": True, "ratio": 1.0}
+        vols = df['volume'].values
+        trigger_vol = vols[-2]
+        avg_vol = np.mean(vols[-(lookback + 2):-2])
+        if avg_vol == 0:
+            return {"confirmed": True, "ratio": 1.0}
+        ratio = trigger_vol / avg_vol
+        c = df.iloc[-2]
+        body = abs(c['close'] - c['open'])
+        total_range = (c['high'] - c['low']) + 1e-9
+        conviction = body / total_range
+        # Moderado: no demasiado poco (indiferencia) ni demasiado (perforación)
+        confirmed = (1.2 <= ratio <= 3.0) and (conviction >= 0.50)
+        return {"confirmed": confirmed, "ratio": ratio, "conviction": conviction}
 
-        return {"confirmed": confirmed, "ratio": ratio, "vol_slope": vol_slope, "conviction": conviction}
+    @staticmethod
+    def vol_ob_retest(df: pd.DataFrame, lookback: int = 20) -> dict:
+        """
+        ORDER BLOCK RETEST: Retesteo de zona institucional (donde los grandes compraron/vendieron).
+        El trader busca que la APROXIMACIÓN al OB sea de volumen BAJO (precio llega silencioso,
+        sin fuerza), y que la vela de REBOTE tenga volumen expansivo (>= 1.5x).
+        Esto demuestra que el OB es válido y los institucionales defienden esa zona.
+        """
+        if len(df) < lookback + 3:
+            return {"confirmed": True, "ratio": 1.0}
+        vols = df['volume'].values
+        trigger_vol = vols[-2]       # vela de rebote (señal)
+        approach_vol = vols[-3]      # vela que llega al OB (debe ser silenciosa)
+        avg_vol = np.mean(vols[-(lookback + 2):-2])
+        if avg_vol == 0:
+            return {"confirmed": True, "ratio": 1.0}
+        ratio = trigger_vol / avg_vol
+        approach_ratio = approach_vol / avg_vol
+        c = df.iloc[-2]
+        body = abs(c['close'] - c['open'])
+        total_range = (c['high'] - c['low']) + 1e-9
+        conviction = body / total_range
+        # Aproximación silenciosa (<= 0.9x) + rebote expansivo (>= 1.5x) + convicción
+        confirmed = (approach_ratio <= 0.9) and (ratio >= 1.5) and (conviction >= 0.40)
+        return {"confirmed": confirmed, "ratio": ratio, "approach_ratio": approach_ratio}
+
+    @staticmethod
+    def vol_amd_breakout(df: pd.DataFrame, lookback: int = 15) -> dict:
+        """
+        AMD PO3 (Accumulation / Manipulation / Distribution):
+        La MANIPULACIÓN (sweep del rango) debe darse con volumen EXPLOSIVO (>= 2.0x).
+        Después del sweep, la DISTRIBUCIÓN (vela de cierre de vuelta al rango) debe
+        tener también buen volumen (>= 1.3x) confirmando la reversión institucional.
+        El rango previo debe haber tenido volumen DECRECIENTE (compresión = acumulación).
+        """
+        if len(df) < lookback + 3:
+            return {"confirmed": True, "ratio": 1.0}
+        vols = df['volume'].values
+        sweep_vol = vols[-2]         # vela del sweep / manipulación
+        dist_vol = vols[-3]          # vela que empieza a revertir (distribución)
+        range_vols = vols[-(lookback + 2):-3]
+        avg_range_vol = np.mean(range_vols) if len(range_vols) > 0 else 1.0
+        if avg_range_vol == 0:
+            return {"confirmed": True, "ratio": 1.0}
+        sweep_ratio = sweep_vol / avg_range_vol
+        dist_ratio = dist_vol / avg_range_vol
+        # Verificar compresión de volumen en el rango (primeros vs últimos de la ventana)
+        half = len(range_vols) // 2
+        if half > 0:
+            early_avg = np.mean(range_vols[:half])
+            late_avg  = np.mean(range_vols[half:])
+            range_compressed = (late_avg <= early_avg * 1.1)  # volumen estable o decreciente
+        else:
+            range_compressed = True
+        confirmed = (sweep_ratio >= 2.0) and (dist_ratio >= 1.3) and range_compressed
+        return {"confirmed": confirmed, "ratio": sweep_ratio, "dist_ratio": dist_ratio, "compressed": range_compressed}
+
+    @staticmethod
+    def vol_st_ema_trend(df: pd.DataFrame, lookback: int = 20) -> dict:
+        """
+        ST_EMA_REGIME_MTF: Estrategia de tendencia con SuperTrend + EMA Stack.
+        El trader busca que el volumen de las últimas velas sea CRECIENTE (slope positivo)
+        — esto demuestra que la tendencia tiene combustible real y no está agotándose.
+        No necesita spike sino pendiente ascendente sostenida.
+        Umbral: slope > 0.05 (tendencia del volumen positiva) + ratio >= 1.1x.
+        """
+        if len(df) < lookback + 2:
+            return {"confirmed": True, "ratio": 1.0}
+        vols = df['volume'].values
+        trigger_vol = vols[-2]
+        avg_vol = np.mean(vols[-(lookback + 2):-2])
+        if avg_vol == 0:
+            return {"confirmed": True, "ratio": 1.0}
+        ratio = trigger_vol / avg_vol
+        # Pendiente del volumen en las últimas 8 velas
+        recent_vols = vols[-9:-1]
+        x = np.arange(len(recent_vols), dtype=float)
+        if len(recent_vols) > 1:
+            slope = float(np.polyfit(x, recent_vols / (avg_vol + 1e-9), 1)[0])
+        else:
+            slope = 0.0
+        # Tendencia confirmada si el volumen está creciendo y la vela actual está por encima del promedio
+        confirmed = (slope > 0.02) and (ratio >= 1.1)
+        return {"confirmed": confirmed, "ratio": ratio, "vol_slope": slope}
 
 # ── ESTRATEGIAS INDIVIDUALES ───────────────────────────────────────────
 
@@ -295,15 +393,15 @@ class SMCPDHSweepReversal:
                         if simulated_sl <= sh:
                             continue
 
-                    # Filtro de Volumen: confirmar ruptura con volumen institucional
-                    vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                    # Filtro de Volumen LIQ SWEEP: Spike institucional + mecha de rechazo
+                    vol_check = TrueSMCAnalyzer.vol_liq_sweep(df_15m)
                     if not vol_check['confirmed']:
                         continue
 
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"Liquidity Sweep Top | Tgt={target:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
+                        reason=f"Liq Sweep Top | Vol={vol_check['ratio']:.2f}x Wick={vol_check['wick_ratio']:.0%}", score=1.0
                     )
 
         for target in lower_targets:
@@ -317,15 +415,15 @@ class SMCPDHSweepReversal:
                         if simulated_sl >= sl:
                             continue
 
-                    # Filtro de Volumen: confirmar ruptura con volumen institucional
-                    vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                    # Filtro de Volumen LIQ SWEEP: Spike institucional + mecha de rechazo
+                    vol_check = TrueSMCAnalyzer.vol_liq_sweep(df_15m)
                     if not vol_check['confirmed']:
                         continue
 
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"Liquidity Sweep Bottom | Tgt={target:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
+                        reason=f"Liq Sweep Bottom | Vol={vol_check['ratio']:.2f}x Wick={vol_check['wick_ratio']:.0%}", score=1.0
                     )
         return None
 
@@ -358,15 +456,15 @@ class SMCFVGMitigation:
                     if simulated_sl >= sl:
                         return None
 
-                # Filtro de Volumen
-                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                # Filtro de Volumen FVG: moderado y sostenido, con convicción de cuerpo
+                vol_check = TrueSMCAnalyzer.vol_fvg_mitig(df_15m)
                 if not vol_check['confirmed']:
                     return None
 
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"FVG Mitigated Long | Zone {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
+                    reason=f"FVG Long | {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x Conv={vol_check['conviction']:.0%}", score=1.0
                 )
                 
         if bear_fvg and trigger['close'] < ema100 and cond_1h_short:
@@ -378,15 +476,15 @@ class SMCFVGMitigation:
                     if simulated_sl <= sh:
                         return None
 
-                # Filtro de Volumen
-                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                # Filtro de Volumen FVG: moderado y sostenido, con convicción de cuerpo
+                vol_check = TrueSMCAnalyzer.vol_fvg_mitig(df_15m)
                 if not vol_check['confirmed']:
                     return None
 
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"FVG Mitigated Short | Zone {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
+                    reason=f"FVG Short | {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x Conv={vol_check['conviction']:.0%}", score=1.0
                 )
         return None
 
@@ -419,15 +517,15 @@ class SMCOrderblockBounce:
                     if simulated_sl >= sl:
                         return None
 
-                # Filtro de Volumen
-                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                # Filtro de Volumen OB: llegada silenciosa + rebote explosivo
+                vol_check = TrueSMCAnalyzer.vol_ob_retest(df_15m)
                 if not vol_check['confirmed']:
                     return None
 
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"OB Retest Long | OB High {ob_high:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
+                    reason=f"OB Retest Long | {ob_high:.4f} | Vol={vol_check['ratio']:.2f}x Approach={vol_check['approach_ratio']:.2f}x", score=1.0
                 )
                 
         if bear_ob is not None and trigger['close'] < ema100 and cond_1h_short:
@@ -478,10 +576,15 @@ class SMCAMDBreakout:
                         if simulated_sl <= sh:
                             return None # Rechazar operación
 
+                    # Filtro de Volumen AMD: volumen explosivo en sweep + compresión previa en rango
+                    vol_check = TrueSMCAnalyzer.vol_amd_breakout(df_15m)
+                    if not vol_check['confirmed']:
+                        return None
+
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"AMD Sweep High -> Distribute Short", score=1.0
+                        reason=f"AMD Short | Vol={vol_check['ratio']:.2f}x Dist={vol_check['dist_ratio']:.2f}x", score=1.0
                     )
             if trigger['low'] < range_low and trigger['close'] > range_low:
                 if trigger['close'] > trigger['open'] and cond_1h_long:
@@ -491,10 +594,15 @@ class SMCAMDBreakout:
                         if simulated_sl >= sl:
                             return None # Rechazar operación
 
+                    # Filtro de Volumen AMD: volumen explosivo en sweep + compresión previa en rango
+                    vol_check = TrueSMCAnalyzer.vol_amd_breakout(df_15m)
+                    if not vol_check['confirmed']:
+                        return None
+
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"AMD Sweep Low -> Distribute Long", score=1.0
+                        reason=f"AMD Long | Vol={vol_check['ratio']:.2f}x Dist={vol_check['dist_ratio']:.2f}x", score=1.0
                     )
         return None
 
@@ -565,10 +673,15 @@ class SuperTrendEMARegimeMTFPro:
                     if simulated_sl >= sl:
                         return None # Rechazar operación
 
+                # Filtro de Volumen ST_EMA: pendiente ascendente sostenida (combustible de tendencia)
+                vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
+                if not vol_check['confirmed']:
+                    return None
+
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
                     entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"ST Trend {trigger['st_dir']} + EMA Stack", score=1.0
+                    reason=f"ST+EMA Long | ADX={trigger['adx']:.1f} | Vol Slope={vol_check['vol_slope']:.3f}", score=1.0
                 )
                 
         # SHORT
@@ -591,10 +704,15 @@ class SuperTrendEMARegimeMTFPro:
                     if simulated_sl <= sh:
                         return None # Rechazar operación
 
+                # Filtro de Volumen ST_EMA: pendiente ascendente sostenida (combustible de tendencia)
+                vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
+                if not vol_check['confirmed']:
+                    return None
+
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="limit",
                     entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"ST Trend {trigger['st_dir']} + EMA Stack", score=1.0
+                    reason=f"ST+EMA Short | ADX={trigger['adx']:.1f} | Vol Slope={vol_check['vol_slope']:.3f}", score=1.0
                 )
                 
         return None

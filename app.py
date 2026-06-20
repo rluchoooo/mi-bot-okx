@@ -168,31 +168,43 @@ def build_dashboard() -> str:
         
         shield_html = f'<div style="display: flex; flex-direction: column; justify-content: center;"><div style="display: flex; align-items: center;">{badge_html}</div>{sltp_html}</div>'
 
-        # Match live_upl by dictionary key directly
+        # Match live_upl by dictionary key - try all symbol formats
         live_upl = 0.0
-        if hasattr(runtime, "last_positions"):
-            t_side = t.side.value if hasattr(t.side, "value") else str(t.side)
+        pos = {}  # initialize always
+        t_side = "long"  # default
+        if hasattr(runtime, "last_positions") and runtime.last_positions:
             if hasattr(t.side, "value"):
-                t_side = t.side.value
+                t_side = t.side.value.lower()
             elif isinstance(t.side, str) and "." in t.side:
                 t_side = t.side.split(".")[-1].lower()
             else:
                 t_side = str(t.side).lower()
-                
-            norm_symbol = t.symbol.replace("-USDT-SWAP", "USDT")
-            pos = runtime.last_positions.get((norm_symbol, t_side), {})
+
+            lp = runtime.last_positions
+            # Try all symbol key variants
+            for sym_key in [
+                t.symbol,                                      # e.g. ETC-USDT-SWAP
+                t.symbol.replace("-USDT-SWAP", "USDT"),        # e.g. ETCUSDT
+                t.symbol.replace("-SWAP", ""),                  # e.g. ETC-USDT
+                t.symbol.replace("-USDT-SWAP", "-USDT"),       # e.g. ETC-USDT
+            ]:
+                candidate = lp.get((sym_key, t_side), {})
+                if candidate:
+                    pos = candidate
+                    break
+
             if pos:
                 try:
                     upl_raw = pos.get("upl", "") or "0"
                     live_upl = float(upl_raw) if upl_raw else 0.0
                 except (ValueError, TypeError):
                     pass
-                    
+
         upl_val = live_upl
         sign    = "+" if upl_val >= 0 else ""
         pnl_col = _pnl_color(upl_val)
         if not pos:
-            pnl_lbl = f'<span style="color: #ffb74d !important; font-size: 10px;">{t.symbol} | {t_side} NO SYNC</span>'
+            pnl_lbl = f'<span style="color: #64748b; font-size: 11px; font-weight: 600;">+0.0000</span>'
         else:
             pnl_lbl = f'<span style="color: {pnl_col} !important; font-weight: 900; text-shadow: 0 0 5px {pnl_col}80;">{sign}{upl_val:.4f}</span>'
 

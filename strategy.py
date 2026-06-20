@@ -217,6 +217,43 @@ class TrueSMCAnalyzer:
                             
         return bullish_ob, bearish_ob
 
+    @staticmethod
+    def volume_confirms_breakout(df: pd.DataFrame, lookback: int = 20) -> dict:
+        """
+        Analiza si el volumen confirma la vela de ruptura actual.
+        Un trader profesional siempre verifica:
+        1) Volumen de la vela de señal vs. promedio (debe ser >= 1.4x)
+        2) Tendencia del volumen (¿está aumentando o decayendo?)
+        3) Relación cuerpo/sombra con respaldo de volumen (convicción)
+        
+        Returns: dict con 'confirmed' (bool) y 'ratio' (float)
+        """
+        if len(df) < lookback + 2:
+            return {"confirmed": True, "ratio": 1.0}  # sin datos suficientes, no bloquear
+
+        vols = df['volume'].values
+        trigger_vol = vols[-2]  # vela confirmada (la penúltima)
+        avg_vol = np.mean(vols[-(lookback + 2):-2])  # promedio de las N velas previas
+
+        if avg_vol == 0:
+            return {"confirmed": True, "ratio": 1.0}
+
+        ratio = trigger_vol / avg_vol
+
+        # Tendencia del volumen: las últimas 5 velas ¿suben o bajan?
+        recent_vols = vols[-7:-2]
+        vol_slope = (recent_vols[-1] - recent_vols[0]) / (len(recent_vols) * avg_vol + 1e-9)
+
+        # Convicción: cuerpo grande vs. sombras pequeñas
+        c = df.iloc[-2]
+        body = abs(c['close'] - c['open'])
+        total_range = c['high'] - c['low'] + 1e-9
+        conviction = body / total_range  # >0.5 = vela de convicción
+
+        confirmed = (ratio >= 1.4) and (conviction > 0.35)
+
+        return {"confirmed": confirmed, "ratio": ratio, "vol_slope": vol_slope, "conviction": conviction}
+
 # ── ESTRATEGIAS INDIVIDUALES ───────────────────────────────────────────
 
 class SMCPDHSweepReversal:
@@ -256,13 +293,17 @@ class SMCPDHSweepReversal:
                     if sh is not None:
                         simulated_sl = trigger['close'] + (atr * 2.0)
                         if simulated_sl <= sh:
-                            # Rechazar: el SL matemático queda por debajo de la resistencia (muy fácil de cazar)
                             continue
+
+                    # Filtro de Volumen: confirmar ruptura con volumen institucional
+                    vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                    if not vol_check['confirmed']:
+                        continue
 
                     return Signal(
                         symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"Liquidity Sweep Top | Tgt={target:.4f}", score=1.0
+                        reason=f"Liquidity Sweep Top | Tgt={target:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
                     )
 
         for target in lower_targets:
@@ -274,13 +315,17 @@ class SMCPDHSweepReversal:
                     if sl is not None:
                         simulated_sl = trigger['close'] - (atr * 2.0)
                         if simulated_sl >= sl:
-                            # Rechazar: el SL matemático queda por encima del soporte (muy fácil de cazar)
                             continue
+
+                    # Filtro de Volumen: confirmar ruptura con volumen institucional
+                    vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                    if not vol_check['confirmed']:
+                        continue
 
                     return Signal(
                         symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                         entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                        reason=f"Liquidity Sweep Bottom | Tgt={target:.4f}", score=1.0
+                        reason=f"Liquidity Sweep Bottom | Tgt={target:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
                     )
         return None
 
@@ -311,12 +356,17 @@ class SMCFVGMitigation:
                 if sl is not None:
                     simulated_sl = trigger['close'] - (atr * 2.0)
                     if simulated_sl >= sl:
-                        return None # Rechazar operación
+                        return None
+
+                # Filtro de Volumen
+                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                if not vol_check['confirmed']:
+                    return None
 
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"FVG Mitigated Long | Zone {fvg_bottom:.4f}-{fvg_top:.4f}", score=1.0
+                    reason=f"FVG Mitigated Long | Zone {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
                 )
                 
         if bear_fvg and trigger['close'] < ema100 and cond_1h_short:
@@ -326,12 +376,17 @@ class SMCFVGMitigation:
                 if sh is not None:
                     simulated_sl = trigger['close'] + (atr * 2.0)
                     if simulated_sl <= sh:
-                        return None # Rechazar operación
+                        return None
+
+                # Filtro de Volumen
+                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                if not vol_check['confirmed']:
+                    return None
 
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"FVG Mitigated Short | Zone {fvg_bottom:.4f}-{fvg_top:.4f}", score=1.0
+                    reason=f"FVG Mitigated Short | Zone {fvg_bottom:.4f}-{fvg_top:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
                 )
         return None
 
@@ -362,12 +417,17 @@ class SMCOrderblockBounce:
                 if sl is not None:
                     simulated_sl = trigger['close'] - (atr * 2.0)
                     if simulated_sl >= sl:
-                        return None # Rechazar operación
+                        return None
+
+                # Filtro de Volumen
+                vol_check = TrueSMCAnalyzer.volume_confirms_breakout(df_15m)
+                if not vol_check['confirmed']:
+                    return None
 
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="market",
                     entry_price=Decimal(str(trigger['close'])), atr_5m=Decimal(str(atr)),
-                    reason=f"OB Retest Long | OB High {ob_high:.4f}", score=1.0
+                    reason=f"OB Retest Long | OB High {ob_high:.4f} | Vol={vol_check['ratio']:.2f}x", score=1.0
                 )
                 
         if bear_ob is not None and trigger['close'] < ema100 and cond_1h_short:

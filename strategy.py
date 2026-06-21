@@ -178,14 +178,14 @@ class TrueSMCAnalyzer:
         bullish_ob = None
         bearish_ob = None
         
-        vols = df['volume'].rolling(10).mean()
+        vols = df['vol'].rolling(10).mean()
         
         start_idx = len(df) - lookback
         end_idx = len(df) - 3 
         
         for i in range(end_idx, start_idx, -1):
             expansion_candle = df.iloc[i]
-            if expansion_candle['volume'] > vols.iloc[i] * 1.2:
+            if expansion_candle['vol'] > vols.iloc[i] * 1.2:
                 body = abs(expansion_candle['close'] - expansion_candle['open'])
                 atr_val = _atr(df.iloc[:i+1], 14).iloc[-1]
                 
@@ -228,7 +228,7 @@ class TrueSMCAnalyzer:
         """
         if len(df) < lookback + 2:
             return {"confirmed": True, "ratio": 1.0}
-        vols = df['volume'].values
+        vols = df['vol'].values
         trigger_vol = vols[-2]
         avg_vol = np.mean(vols[-(lookback + 2):-2])
         if avg_vol == 0:
@@ -253,7 +253,7 @@ class TrueSMCAnalyzer:
         """
         if len(df) < lookback + 2:
             return {"confirmed": True, "ratio": 1.0}
-        vols = df['volume'].values
+        vols = df['vol'].values
         trigger_vol = vols[-2]
         avg_vol = np.mean(vols[-(lookback + 2):-2])
         if avg_vol == 0:
@@ -277,7 +277,7 @@ class TrueSMCAnalyzer:
         """
         if len(df) < lookback + 3:
             return {"confirmed": True, "ratio": 1.0}
-        vols = df['volume'].values
+        vols = df['vol'].values
         trigger_vol = vols[-2]       # vela de rebote (señal)
         approach_vol = vols[-3]      # vela que llega al OB (debe ser silenciosa)
         avg_vol = np.mean(vols[-(lookback + 2):-2])
@@ -304,7 +304,7 @@ class TrueSMCAnalyzer:
         """
         if len(df) < lookback + 3:
             return {"confirmed": True, "ratio": 1.0}
-        vols = df['volume'].values
+        vols = df['vol'].values
         sweep_vol = vols[-2]         # vela del sweep / manipulación
         dist_vol = vols[-3]          # vela que empieza a revertir (distribución)
         range_vols = vols[-(lookback + 2):-3]
@@ -335,7 +335,7 @@ class TrueSMCAnalyzer:
         """
         if len(df) < lookback + 2:
             return {"confirmed": True, "ratio": 1.0}
-        vols = df['volume'].values
+        vols = df['vol'].values
         trigger_vol = vols[-2]
         avg_vol = np.mean(vols[-(lookback + 2):-2])
         if avg_vol == 0:

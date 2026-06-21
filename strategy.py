@@ -633,7 +633,6 @@ class SuperTrendEMARegimeMTFPro:
         
         trigger = df_15m.iloc[-2]
         trigger_1h = df_1h.iloc[-2]
-        sh, sl = TrueSMCAnalyzer.get_swing_pivots(df_15m, window=5, lookback=40)
         
         # 3. Detectar armado de setup (Regímenes) en ventana de 160 velas
         window_start = max(0, len(df_15m) - 160 - 2)
@@ -667,19 +666,10 @@ class SuperTrendEMARegimeMTFPro:
             cond_1h = (trigger_1h['close'] > trigger_1h['ema200']) and (trigger_1h['ema9'] > trigger_1h['ema21'])
             
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
-                # Filtro de SL estructural
-                if sl is not None:
-                    simulated_sl = trigger['close'] - (trigger['atr'] * float(ATR_MULTIPLIER_SL))
-                    if simulated_sl >= sl:
-                        return None # Rechazar operación
-
-                # Filtro de Volumen ST_EMA: Desactivado por solicitud
-                vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
-
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
                     entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"ST+EMA Long | ADX={trigger['adx']:.1f} | Vol Slope={vol_check['vol_slope']:.3f}", score=1.0
+                    reason=f"ST+EMA Long | ADX={trigger['adx']:.1f}", score=1.0
                 )
                 
         # SHORT
@@ -696,19 +686,10 @@ class SuperTrendEMARegimeMTFPro:
             cond_1h = (trigger_1h['close'] < trigger_1h['ema200']) and (trigger_1h['ema9'] < trigger_1h['ema21'])
 
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
-                # Filtro de SL estructural
-                if sh is not None:
-                    simulated_sl = trigger['close'] + (trigger['atr'] * float(ATR_MULTIPLIER_SL))
-                    if simulated_sl <= sh:
-                        return None # Rechazar operación
-
-                # Filtro de Volumen ST_EMA: Desactivado por solicitud
-                vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
-
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="limit",
                     entry_price=Decimal(str(trigger['ema21'])), atr_5m=Decimal(str(trigger['atr'])),
-                    reason=f"ST+EMA Short | ADX={trigger['adx']:.1f} | Vol Slope={vol_check['vol_slope']:.3f}", score=1.0
+                    reason=f"ST+EMA Short | ADX={trigger['adx']:.1f}", score=1.0
                 )
                 
         return None

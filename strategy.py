@@ -669,7 +669,7 @@ class SuperTrendEMARegimeMTFPro:
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
                 # Filtro de SL estructural
                 if sl is not None:
-                    simulated_sl = trigger['close'] - (trigger['atr'] * 2.0)
+                    simulated_sl = trigger['close'] - (trigger['atr'] * float(ATR_MULTIPLIER_SL))
                     if simulated_sl >= sl:
                         return None # Rechazar operación
 
@@ -698,7 +698,7 @@ class SuperTrendEMARegimeMTFPro:
             if all([cond_st, cond_px, cond_st_ema, cond_ema_stack, cond_adx, cond_slope, cond_dist, cond_1h]):
                 # Filtro de SL estructural
                 if sh is not None:
-                    simulated_sl = trigger['close'] + (trigger['atr'] * 2.0)
+                    simulated_sl = trigger['close'] + (trigger['atr'] * float(ATR_MULTIPLIER_SL))
                     if simulated_sl <= sh:
                         return None # Rechazar operación
 

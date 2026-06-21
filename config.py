@@ -42,7 +42,7 @@ EMA_SLOW    = 100
 EMA_TREND   = 100             # Usado para el bias de tendencia macro en la Estrategia B
 
 # ── SL / TP ───────────────────────────────────────────────────────────
-ATR_MULTIPLIER_SL = Decimal("2.0")
+ATR_MULTIPLIER_SL = Decimal("2.5")
 
 BREAKEVEN_ACTIVATION_PCT = Decimal("0.40")   # Se activa al llegar al 40% del objetivo (TP2)
 BREAKEVEN_PROFIT_PCT     = Decimal("0.15")   # Asegura un 15% de ganancia del objetivo

@@ -889,7 +889,7 @@ class QuantumBotRuntime:
                         t = Trade(
                             symbol=sym,
                             side=side,
-                            strategy=Strategy.AUTO_ADOPTED,
+                            strategy=Strategy.ST_EMA_REGIME_MTF,
                             status=TradeStatus.OPEN if not tp2_done else TradeStatus.TRAILING,
                             entry_price=entry,
                             qty=qty,

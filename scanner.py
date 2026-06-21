@@ -1138,7 +1138,11 @@ class QuantumBotRuntime:
                 self._log(f"[{iid}] ⏳ Orden Límite enviada (ordId: {ord_id}). Esperando 15 mins para fill...", "SYSTEM")
                 return True
             else:
-                self._log(f"[{iid}] ❌ RECHAZADO: {ord_id}", "ERROR")
+                err_str = str(ord_id)
+                self._log(f"[{iid}] ❌ RECHAZADO: {err_str}", "ERROR")
+                if "51155" in err_str or "compliance" in err_str.lower():
+                    self.compliance_restricted.add(iid)
+                    self._log(f"[{iid}] Símbolo con restricciones de cumplimiento OKX. Agregado a lista de exclusión local.", "WARN")
                 return False
                 
         except Exception as e:

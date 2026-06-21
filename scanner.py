@@ -856,7 +856,7 @@ class QuantumBotRuntime:
                         
                         # --- Visión Retroactiva (Inteligencia del Guardián) ---
                         mark_px = float(p.get("markPx", entry))
-                        nom_size = abs(qty * entry * ctVal_f)
+                        nom_size = abs(qty * entry * ct_val_f)
                         
                         # Inferir TP1 y TP2 basado en el margen nominal remanente ($150 total)
                         tp1_done = False
@@ -881,7 +881,7 @@ class QuantumBotRuntime:
                         t = Trade(
                             symbol=sym,
                             side=side,
-                            strategy="AUTO_ADOPTED",
+                            strategy=Strategy.AUTO_ADOPTED,
                             status=TradeStatus.OPEN if not tp2_done else TradeStatus.TRAILING,
                             entry_price=entry,
                             qty=qty,

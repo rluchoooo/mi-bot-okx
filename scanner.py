@@ -634,14 +634,22 @@ class QuantumBotRuntime:
                     inst_id = p.get("instId", "")
                     if not inst_id.endswith("-USDT-SWAP"):
                         continue
-                    pos_side = p.get("posSide", "long").lower()
-                    mgn_mode = p.get("mgnMode", "isolated")
-                    side = TradeSide.LONG if pos_side == "long" else TradeSide.SHORT
-                    entry = float(p.get("avgPx", 0))
-                    qty = float(p.get("pos", 0))
-                    if abs(qty) == 0:
+                    pos_side_raw = p.get("posSide", "long").lower()
+                    qty_raw = float(p.get("pos", 0))
+                    if abs(qty_raw) == 0:
                         continue
+                    
+                    if pos_side_raw == "net":
+                        side = TradeSide.LONG if qty_raw > 0 else TradeSide.SHORT
+                        pos_side = "net"
+                    else:
+                        side = TradeSide.LONG if pos_side_raw == "long" else TradeSide.SHORT
+                        pos_side = pos_side_raw
                         
+                    mgn_mode = p.get("mgnMode", "isolated")
+                    entry = float(p.get("avgPx", 0))
+                    qty = float(qty_raw)
+
                     if inst_id not in self._instruments:
                         try:
                             res = await client._req("GET", f"/api/v5/public/instruments?instType=SWAP&instId={inst_id}")
@@ -676,7 +684,7 @@ class QuantumBotRuntime:
                     # Filter pending algos by symbol AND side to avoid mixing them up
                     algos_for_sym = [
                         a for a in pending
-                        if a.get("instId") == inst_id and a.get("posSide", "").lower() == pos_side
+                        if a.get("instId") == inst_id and a.get("posSide", "").lower() in (pos_side, "net", "")
                     ]
                     sl_count = sum(1 for a in algos_for_sym if a.get("slTriggerPx"))
                     tp_count = sum(1 for a in algos_for_sym if a.get("tpTriggerPx"))
@@ -717,7 +725,7 @@ class QuantumBotRuntime:
 
                             success = await local_exec_engine.restore_native_orders(
                                 symbol=inst_id, 
-                                side=pos_side, 
+                                side=side.value if hasattr(side, "value") else str(side), 
                                 trade=trade, 
                                 tick_sz=tick_sz, 
                                 lot_sz=lot_sz

@@ -1479,7 +1479,6 @@ class QuantumBotRuntime:
                         new_sl = decision.new_sl
                         trade.sl_price = float(new_sl)
                         if decision.reason == "BREAKEVEN_ACTIVATE":
-                            trade.be_activated = 1
                             trade.profit_lock_active = 1
                             trade.status = TradeStatus.BREAKEVEN
                             # Use modify_native_sl to move SL on OKX without cancelling TP orders
@@ -1491,8 +1490,7 @@ class QuantumBotRuntime:
                             await _exec.modify_native_sl(symbol, side, float(new_sl), _tick)
                             await notifier.notify_breakeven(symbol, float(new_sl))
                         elif decision.reason in ("TRAIL_ACTIVATE", "TRAIL_MOVE"):
-                            trade.trail_activated = 1
-                            trade.trail_sl = float(new_sl)
+                            trade.trailing_active = 1
                             trade.status   = TradeStatus.TRAILING
                             # Modify the existing SL on OKX, don't cancel TP orders unnecessarily
                             from order_execution_engine import OrderExecutionEngine
@@ -1538,9 +1536,9 @@ class QuantumBotRuntime:
                             await client.cancel_algo_orders(symbol, "long" if side == "long" else "short")
                             trade.status = TradeStatus.CLOSED
                             if decision.reason == "TP1_HIT":
-                                trade.tp1_done = 1
+                                trade.tp1_filled = 1
                             elif decision.reason == "TP2_HIT":
-                                trade.tp2_done = 1
+                                trade.tp2_filled = 1
                             trade.close_price = float(price)
                             trade.close_reason = decision.reason
                             trade.closed_at = datetime.utcnow()
@@ -1566,9 +1564,9 @@ class QuantumBotRuntime:
                                 await client.close_partial_position(symbol, side, close_qty_rounded)
                                 trade.qty = float(new_qty)
                                 if decision.reason == "TP1_HIT":
-                                    trade.tp1_done = 1
+                                    trade.tp1_filled = 1
                                 elif decision.reason == "TP2_HIT":
-                                    trade.tp2_done = 1
+                                    trade.tp2_filled = 1
                                 await client.cancel_algo_orders(symbol, "long" if side == "long" else "short")
                                 await self._place_algo_order_safe(client, symbol, "long" if side == "long" else "short", new_qty, sl=Decimal(str(trade.sl_price)), tp=Decimal(str(trade.tp_price)) if trade.tp_price else None, td_mode=mgn_mode)
                                 db.add(TradeEvent(trade_id=trade_id, event_type=decision.reason,

@@ -181,7 +181,7 @@ class OrderExecutionEngine:
             if pending:
                 sl_algos = [
                     a for a in pending
-                    if a.get("slTriggerPx") and a.get("posSide", "").lower() == pos_side
+                    if a.get("slTriggerPx") and a.get("posSide", "").lower() in (pos_side, "net", "")
                 ]
                 if sl_algos:
                     payloads = [

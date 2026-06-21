@@ -673,10 +673,8 @@ class SuperTrendEMARegimeMTFPro:
                     if simulated_sl >= sl:
                         return None # Rechazar operación
 
-                # Filtro de Volumen ST_EMA: pendiente ascendente sostenida (combustible de tendencia)
+                # Filtro de Volumen ST_EMA: Desactivado por solicitud
                 vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
-                if not vol_check['confirmed']:
-                    return None
 
                 return Signal(
                     symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
@@ -704,10 +702,8 @@ class SuperTrendEMARegimeMTFPro:
                     if simulated_sl <= sh:
                         return None # Rechazar operación
 
-                # Filtro de Volumen ST_EMA: pendiente ascendente sostenida (combustible de tendencia)
+                # Filtro de Volumen ST_EMA: Desactivado por solicitud
                 vol_check = TrueSMCAnalyzer.vol_st_ema_trend(df_15m)
-                if not vol_check['confirmed']:
-                    return None
 
                 return Signal(
                     symbol=symbol, side="short", strategy=self.NAME, order_type="limit",

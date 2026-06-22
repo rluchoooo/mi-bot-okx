@@ -69,11 +69,11 @@ def compute_qty(
 
 def breakeven_sl(entry: Decimal, side: str, atr: Decimal = Decimal("0"), tp_dist: Decimal = Decimal("0")) -> Decimal:
     """
-    SL de breakeven = entrada +/- 0.6 ATR.
-    Blindaje mínimo garantizado (15% de 4.0 ATR)
+    SL de breakeven = entrada +/- 0.4 ATR.
+    Blindaje obligatorio garantizado (10% de la Meta de 4.0 ATR)
     """
-    BE_ATR_DIST = Decimal("0.6")
-    lock = BE_ATR_DIST * atr if atr > 0 else BREAKEVEN_PROFIT_PCT * tp_dist
+    BE_ATR_DIST = Decimal("0.4")
+    lock = BE_ATR_DIST * atr if atr > 0 else Decimal("0.10") * tp_dist
     return entry + lock if side == "long" else entry - lock
 
 

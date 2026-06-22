@@ -1420,9 +1420,9 @@ class QuantumBotRuntime:
             inst        = self._instruments.get(td["symbol"])
             ct_val      = Decimal(inst["ctVal"]) if inst else Decimal("1")
 
-            # Fetch 15m candles if ST_EMA trailing is active
+            # Fetch 15m candles if trailing or nearing trailing (for all strategies)
             df_15m = None
-            if td.get("strategy") == "ST_EMA_REGIME_MTF" and td["trail_done"]:
+            if td["trail_done"] or td["tp1_done"]:
                 try:
                     df_15m = await client.candles(td["symbol"], "15m", 50)
                 except Exception:

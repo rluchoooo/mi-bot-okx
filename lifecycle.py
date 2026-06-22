@@ -39,7 +39,7 @@ class LifecycleDecision:
 # ── Constantes de la regla 30/30/40 ───────────────────────────────────────
 ATR_SL        = Decimal("2.0")    # SL a 2.0 ATR
 ATR_TP1       = Decimal("1.2")    # TP1 a 1.2 ATR  → 30% del objetivo total (4.0)
-ATR_BREAKEVEN = Decimal("1.33")   # Breakeven a 1.33 ATR → 33.3% del objetivo total
+ATR_BREAKEVEN = Decimal("1.32")   # Breakeven a 1.32 ATR → 33% del objetivo total
 ATR_TP2       = Decimal("2.4")    # TP2 a 2.4 ATR  → 60% del objetivo total
 ATR_TARGET    = Decimal("4.0")    # Referencia teórica (Trailing infinito en la práctica)
 
@@ -124,11 +124,18 @@ def evaluate(
             ))
             return decisions
 
-    # ── 1. Trailing seguimiento (mueve SL con el pico) ─────────────────────
+    # ── 1. Trailing seguimiento (mueve SL con la EMA21 o el pico) ─────────────────────
     if trail_activated and trail_sl is not None:
-        if peak_price is None:
-            peak_price = price
-        updated = new_trail_sl_fixed(peak_price, side, trail_sl, atr=atr_5m)
+        updated = trail_sl
+        if df_5m is not None and not df_5m.empty:
+            ema21 = _ema(df_5m['close'], 21).iloc[-1]
+            candidate = Decimal(str(ema21))
+            updated = max(candidate, trail_sl) if side == "long" else min(candidate, trail_sl)
+        else:
+            if peak_price is None:
+                peak_price = price
+            updated = new_trail_sl_fixed(peak_price, side, trail_sl, atr=atr_5m)
+
         if updated != trail_sl:
             decisions.append(LifecycleDecision(
                 action=Action.MOVE_SL,
@@ -150,8 +157,8 @@ def evaluate(
                     reason="BREAKEVEN_ACTIVATE",
                     new_sl=new_sl,
                     log_message=(
-                        f"🛡️ BREAKEVEN activado (1.33 ATR = 33.3%). "
-                        f"SL blindado: {current_sl:.6f} → {new_sl:.6f} (entrada + 0.6 ATR)"
+                        f"🛡️ BREAKEVEN activado (1.32 ATR = 33%). "
+                        f"SL blindado: {current_sl:.6f} → {new_sl:.6f} (entrada + 0.4 ATR)"
                     ),
                 ))
 
@@ -175,10 +182,15 @@ def evaluate(
                 log_message=f"🚀 TP2 (2.4 ATR) alcanzado: {price:.6f} → cierra 30% + activa Runner",
             ))
 
-            # Iniciar Trailing desde el pico actual
-            if peak_price is None:
-                peak_price = price
-            init_sl = new_trail_sl_fixed(peak_price, side, current_sl, atr=atr_5m)
+            # Iniciar Trailing desde la EMA21 o el pico actual
+            init_sl = current_sl
+            if df_5m is not None and not df_5m.empty:
+                ema21 = _ema(df_5m['close'], 21).iloc[-1]
+                init_sl = Decimal(str(ema21))
+            else:
+                if peak_price is None:
+                    peak_price = price
+                init_sl = new_trail_sl_fixed(peak_price, side, current_sl, atr=atr_5m)
 
             # Salvaguarda: trailing nunca baja del breakeven (entrada + 0.33 ATR)
             min_secure = breakeven_sl(entry, side, atr=atr_5m)

@@ -1504,15 +1504,19 @@ class QuantumBotRuntime:
                         elif decision.reason in ("TRAIL_ACTIVATE", "TRAIL_MOVE"):
                             trade.trailing_active = 1
                             trade.status   = TradeStatus.TRAILING
-                            # Modify the existing SL on OKX, don't cancel TP orders unnecessarily
                             from order_execution_engine import OrderExecutionEngine
                             inst = self._instruments.get(symbol, {})
                             from decimal import Decimal as _D
                             _tick = _D(str(inst.get("tickSz", "0.0001")))
                             _exec = OrderExecutionEngine(client)
-                            await _exec.modify_native_sl(symbol, side, float(new_sl), _tick)
+                            
                             if decision.reason == "TRAIL_ACTIVATE":
+                                trade.tp_price = None
+                                await client.cancel_algo_orders(symbol, "long" if side == "long" else "short")
+                                await self._place_algo_order_safe(client, symbol, "long" if side == "long" else "short", Decimal(str(trade.qty)), sl=Decimal(str(new_sl)), td_mode=mgn_mode)
                                 await notifier.notify_trailing(symbol, float(new_sl))
+                            else:
+                                await _exec.modify_native_sl(symbol, side, float(new_sl), _tick)
                         db.add(TradeEvent(trade_id=trade_id, event_type=decision.reason,
                                           message=decision.log_message, price=float(price)))
                         db.commit()

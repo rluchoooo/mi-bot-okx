@@ -142,7 +142,12 @@ def fetch_dashboard_data():
         if hasattr(runtime, "last_positions") and runtime.last_positions:
             for lp_pos in runtime.last_positions.values():
                 lp_inst = lp_pos.get("instId", "")
-                if lp_inst in [t.symbol, t.symbol.replace("-SWAP", ""), t.symbol.replace("-USDT-SWAP", "USDT")]:
+                
+                # Normalize both symbols to just the base asset (e.g. THETA-USDT-SWAP -> THETA)
+                lp_base = lp_inst.replace("-", "").replace("SWAP", "").replace("USDT", "")
+                t_base = t.symbol.replace("-", "").replace("SWAP", "").replace("USDT", "")
+                
+                if lp_base == t_base:
                     try:
                         upl_raw = lp_pos.get("upl", "") or "0"
                         live_upl = float(upl_raw) if upl_raw else 0.0
@@ -157,7 +162,7 @@ def fetch_dashboard_data():
             strat_lbl,
             side_lbl,
             f"{t.entry_price:.6f}" if t.entry_price else "0.00",
-            f"SL: {t.sl_price or 'N/A'} | TP1: {getattr(t, 'tp1_price', 'N/A')}",
+            f"SL: {t.sl_price or 'N/A'} | TP: {getattr(t, 'tp1_price', None) or 'Trailing Only'}",
             upl_val,
             status_val
         ])

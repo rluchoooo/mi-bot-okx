@@ -524,7 +524,7 @@ class QuantumBotRuntime:
                     c_time_ms = float(r.get("cTime", u_time_ms))
                     opened_at_dt = datetime.utcfromtimestamp(c_time_ms / 1000)
                     db.add(Trade(
-                        symbol=inst_id, side=side, strategy=Strategy.AUTO_ADOPTED,
+                        symbol=inst_id, side=side, strategy=Strategy.ST_EMA_REGIME_MTF,
                         status=TradeStatus.CLOSED, entry_price=entry, position_size=qty, remaining_size=0,
                         sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
                         tp_price=entry * (1.10 if side == TradeSide.LONG else 0.90),
@@ -606,7 +606,7 @@ class QuantumBotRuntime:
                     atr_est = entry * Decimal("0.005") / Decimal("2.5")
                     sl = compute_sl(entry, side, atr_est)
                     db.add(Trade(
-                        symbol=iid, side=TradeSide(side), strategy=Strategy.AUTO_ADOPTED,
+                        symbol=iid, side=TradeSide(side), strategy=Strategy.ST_EMA_REGIME_MTF,
                         entry_price=float(entry), position_size=float(abs(qty_raw)), remaining_size=float(abs(qty_raw)),
                         sl_price=float(sl), tp_price=None, atr=float(atr_est),
                         risk_usd=float(FIXED_RISK_USDT), leverage=LEVERAGE,
@@ -669,7 +669,7 @@ class QuantumBotRuntime:
                         # Defaults para huérfanas
                         atr_est = entry * 0.015
                         trade = Trade(
-                            symbol=inst_id, side=side, strategy=Strategy.AUTO_ADOPTED,
+                            symbol=inst_id, side=side, strategy=Strategy.ST_EMA_REGIME_MTF,
                             status=TradeStatus.OPEN, entry_price=entry, position_size=abs(qty), remaining_size=abs(qty),
                             sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
                             tp_price=None,

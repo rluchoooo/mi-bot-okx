@@ -632,6 +632,7 @@ class QuantumBotRuntime:
         
         # Calcular niveles de ciclo de vida
         tp1_price = entry + (lifecycle.ATR_TP1 * atr_est) if side_str == "long" else entry - (lifecycle.ATR_TP1 * atr_est)
+        tp2_price = entry + (lifecycle.ATR_TP2 * atr_est) if side_str == "long" else entry - (lifecycle.ATR_TP2 * atr_est)
         be_price  = entry + (lifecycle.ATR_BREAKEVEN * atr_est) if side_str == "long" else entry - (lifecycle.ATR_BREAKEVEN * atr_est)
         
         crossed_be  = (current_price >= be_price) if side_str == "long" else (current_price <= be_price)
@@ -688,6 +689,8 @@ class QuantumBotRuntime:
             symbol=iid, side=side, strategy=Strategy.ST_EMA_REGIME_MTF,
             entry_price=float(entry), position_size=qty, remaining_size=qty,
             sl_price=float(sl_to_set), tp_price=float(tp_to_set) if tp_to_set else None,
+            tp1_price=float(tp1_price), tp2_price=float(tp2_price),
+            profit_lock_price=float(be_price), profit_lock_sl=float(breakeven_sl(entry, side_str, atr_est)),
             atr=float(atr_est), risk_usd=float(FIXED_RISK_USDT), leverage=int(pos.get("lever", 10)),
             status=trade_status, highest_price=float(max(entry, current_price)), lowest_price=float(min(entry, current_price)),
             profit_lock_active=profit_lock_active, trailing_active=trailing_active,
@@ -767,6 +770,18 @@ class QuantumBotRuntime:
                     sl_count = sum(1 for a in algos_for_sym if a.get("slTriggerPx"))
                     tp_count = sum(1 for a in algos_for_sym if a.get("tpTriggerPx"))
                     
+                    # AUTO-HEAL: Fill missing TP targets if adopted previously without them
+                    if not getattr(trade, "tp1_price", None) or not getattr(trade, "tp2_price", None):
+                        import lifecycle
+                        atr_est = trade.atr if trade.atr else (trade.entry_price * 0.005 / 2.5)
+                        if trade.side.value == "long":
+                            trade.tp1_price = trade.entry_price + (lifecycle.ATR_TP1 * atr_est)
+                            trade.tp2_price = trade.entry_price + (lifecycle.ATR_TP2 * atr_est)
+                        else:
+                            trade.tp1_price = trade.entry_price - (lifecycle.ATR_TP1 * atr_est)
+                            trade.tp2_price = trade.entry_price - (lifecycle.ATR_TP2 * atr_est)
+                        db.commit()
+
                     # Expected counts from database based on the 30/30/40 phase
                     expected_sl = 1 if trade.sl_price else 0
                     expected_tp = 0

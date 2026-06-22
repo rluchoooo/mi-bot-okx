@@ -772,15 +772,21 @@ class QuantumBotRuntime:
                     
                     # AUTO-HEAL: Fill missing TP targets if adopted previously without them
                     if not getattr(trade, "tp1_price", None) or not getattr(trade, "tp2_price", None):
-                        import lifecycle
-                        atr_est = trade.atr if trade.atr else (trade.entry_price * 0.005 / 2.5)
-                        if trade.side.value == "long":
-                            trade.tp1_price = trade.entry_price + (lifecycle.ATR_TP1 * atr_est)
-                            trade.tp2_price = trade.entry_price + (lifecycle.ATR_TP2 * atr_est)
-                        else:
-                            trade.tp1_price = trade.entry_price - (lifecycle.ATR_TP1 * atr_est)
-                            trade.tp2_price = trade.entry_price - (lifecycle.ATR_TP2 * atr_est)
-                        db.commit()
+                        try:
+                            import lifecycle
+                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL: Calculando TP1/TP2 faltantes...", "SYSTEM")
+                            atr_est = trade.atr if trade.atr else (trade.entry_price * 0.005 / 2.5)
+                            s_side = trade.side.value if hasattr(trade.side, "value") else str(trade.side).split(".")[-1].lower()
+                            if s_side == "long":
+                                trade.tp1_price = trade.entry_price + (lifecycle.ATR_TP1 * atr_est)
+                                trade.tp2_price = trade.entry_price + (lifecycle.ATR_TP2 * atr_est)
+                            else:
+                                trade.tp1_price = trade.entry_price - (lifecycle.ATR_TP1 * atr_est)
+                                trade.tp2_price = trade.entry_price - (lifecycle.ATR_TP2 * atr_est)
+                            db.commit()
+                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL OK: TP1={trade.tp1_price}, TP2={trade.tp2_price}", "SYSTEM")
+                        except Exception as ah_err:
+                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL ERROR: {ah_err}", "ERROR")
 
                     # Expected counts from database based on the 30/30/40 phase
                     expected_sl = 1 if trade.sl_price else 0

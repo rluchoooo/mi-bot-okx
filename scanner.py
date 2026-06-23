@@ -287,7 +287,7 @@ class QuantumBotRuntime:
 
         self.running         = False
         self.scanning        = False
-        self.opening_allowed = False
+        self.opening_allowed = True
         self._lock           = threading.Lock()
         self._log_buffer:    list[str] = []
         self._instruments:   dict[str, dict] = {}

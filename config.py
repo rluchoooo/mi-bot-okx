@@ -8,14 +8,14 @@ from decimal import Decimal
 # ── RIESGO ────────────────────────────────────────────────────────────
 FIXED_RISK_USDT       = Decimal("8.0")
 LEVERAGE              = 10
-MAX_CONCURRENT_TRADES = 10
+MAX_CONCURRENT_TRADES = 5
 SAME_SYMBOL_ONLY      = False
 DAILY_LOSS_LIMIT_USDT = Decimal("999999")  # Desactivado – cambiar para producción real
 MAX_POSITION_VAL_USDT = Decimal("800.0")   # Salvaguarda: nominal máximo en USDT para evitar 'insufficient balance'
 
 # ── SCANNER ───────────────────────────────────────────────────────────
 SCAN_INTERVAL_SECONDS = 15
-TOP_COINS_LIMIT       = 50
+TOP_COINS_LIMIT       = 25
 MIN_VOLUME_24H        = 100_000       # USDT mínimo de volumen 24h
 LIMIT_ORDER_OFFSET_PCT = Decimal("0.0002")  # ±0.02% offset en precio límite
 

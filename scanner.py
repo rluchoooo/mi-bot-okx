@@ -816,35 +816,39 @@ class QuantumBotRuntime:
                     sl_count = sum(1 for a in algos_for_sym if a.get("slTriggerPx"))
                     tp_count = sum(1 for a in algos_for_sym if a.get("tpTriggerPx"))
                     
-                    # AUTO-HEAL: Fill missing TP targets if adopted previously without them
-                    if not getattr(trade, "tp1_price", None) or not getattr(trade, "tp2_price", None):
-                        try:
-                            import lifecycle
-                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL: Calculando TP1/TP2 faltantes...", "SYSTEM")
-                            atr_est = float(trade.atr) if getattr(trade, "atr", None) else (float(trade.entry_price) * 0.005 / 2.5)
-                            s_side = trade.side.value if hasattr(trade.side, "value") else str(trade.side).split(".")[-1].lower()
-                            base_price = float(trade.entry_price)
-                            if s_side == "long":
-                                trade.tp1_price = base_price + (float(lifecycle.ATR_TP1) * atr_est)
-                                trade.tp2_price = base_price + (float(lifecycle.ATR_TP2) * atr_est)
-                            else:
-                                trade.tp1_price = base_price - (float(lifecycle.ATR_TP1) * atr_est)
-                                trade.tp2_price = base_price - (float(lifecycle.ATR_TP2) * atr_est)
-                            db.commit()
-                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL OK: TP1={trade.tp1_price}, TP2={trade.tp2_price}", "SYSTEM")
-                        except Exception as ah_err:
-                            self._log(f"[{inst_id}] 🔧 AUTO-HEAL ERROR: {ah_err}", "ERROR")
+                    # AUTO-HEAL: Fill missing TP targets if adopted previously without them (Skip for SuperTrend)
+                    if trade.strategy != Strategy.ST_EMA_REGIME_MTF:
+                        if not getattr(trade, "tp1_price", None) or not getattr(trade, "tp2_price", None):
+                            try:
+                                import lifecycle
+                                self._log(f"[{inst_id}] 🔧 AUTO-HEAL: Calculando TP1/TP2 faltantes...", "SYSTEM")
+                                atr_est = float(trade.atr) if getattr(trade, "atr", None) else (float(trade.entry_price) * 0.005 / 2.5)
+                                s_side = trade.side.value if hasattr(trade.side, "value") else str(trade.side).split(".")[-1].lower()
+                                base_price = float(trade.entry_price)
+                                if s_side == "long":
+                                    trade.tp1_price = base_price + (float(lifecycle.ATR_TP1) * atr_est)
+                                    trade.tp2_price = base_price + (float(lifecycle.ATR_TP2) * atr_est)
+                                else:
+                                    trade.tp1_price = base_price - (float(lifecycle.ATR_TP1) * atr_est)
+                                    trade.tp2_price = base_price - (float(lifecycle.ATR_TP2) * atr_est)
+                                db.commit()
+                                self._log(f"[{inst_id}] 🔧 AUTO-HEAL OK: TP1={trade.tp1_price}, TP2={trade.tp2_price}", "SYSTEM")
+                            except Exception as ah_err:
+                                self._log(f"[{inst_id}] 🔧 AUTO-HEAL ERROR: {ah_err}", "ERROR")
 
                     # Expected counts from database based on the 30/30/40 phase
                     expected_sl = 1 if trade.sl_price else 0
                     expected_tp = 0
                     
-                    if not getattr(trade, "tp1_filled", 0):
-                        expected_tp = 2 # Expecting TP1 and TP2
-                    elif not getattr(trade, "tp2_filled", 0):
-                        expected_tp = 1 # Expecting TP2
+                    if trade.strategy == Strategy.ST_EMA_REGIME_MTF:
+                        expected_tp = 0 # SuperTrend strictly does NOT use fixed TP orders.
                     else:
-                        expected_tp = 0 # Trailing Phase, no TP
+                        if not getattr(trade, "tp1_filled", 0):
+                            expected_tp = 2 # Expecting TP1 and TP2
+                        elif not getattr(trade, "tp2_filled", 0):
+                            expected_tp = 1 # Expecting TP2
+                        else:
+                            expected_tp = 0 # Trailing Phase, no TP
 
                     mismatch = (sl_count != expected_sl) or (tp_count != expected_tp) or (sl_count > 1) or (tp_count > 2)
                     
@@ -1511,8 +1515,8 @@ class QuantumBotRuntime:
                                 success_sync = True
                                 
                         if not success_sync:
-                            self._log(f"[{t.symbol}] ⚠️ Posición cerrada en OKX pero sin registro compatible en historial. Cerrando vía simulación.", "WARN")
-                            active_snapshots.append(t)
+                            self._log(f"[{t.symbol}] ⚠️ Posición no encontrada en OKX ni en historial. Falso positivo o lag de red detectado. Protegiendo registro en DB (Anti-Amnesia).", "WARN")
+                            # Anti-Amnesia: Nos negamos a borrarlo o cerrarlo simulado si no hay confirmación matemática del exchange.
                 else:
                     active_snapshots.append(t)
 

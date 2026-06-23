@@ -693,3 +693,41 @@ class SuperTrendEMARegimeMTFPro:
                 )
                 
         return None
+
+    def exit_signal(self, side: str, df_15m: pd.DataFrame) -> bool:
+        if len(df_15m) < 200: return False
+        
+        df_15m = df_15m.copy()
+        df_15m['ema200'] = _ema(df_15m['close'], 200)
+        df_15m['ema21'] = _ema(df_15m['close'], 21)
+        df_15m['ema9'] = _ema(df_15m['close'], 9)
+        
+        st_df = _supertrend(df_15m, 10, 3.0)
+        df_15m['st'] = st_df['supertrend']
+        df_15m['st_dir'] = st_df['direction']
+        
+        trigger = df_15m.iloc[-2]
+        
+        window_start = max(0, len(df_15m) - 160 - 2)
+        window = df_15m.iloc[window_start:-2]
+        
+        if side == "long":
+            bullish_regime_mask = (window['st_dir'] == 1) & (window['close'] > window['ema200']) & (window['ema9'] > window['ema21'])
+            if bullish_regime_mask.any():
+                cond_st = trigger['st_dir'] == -1
+                cond_px = trigger['close'] < trigger['ema200']
+                cond_st_ema = trigger['st'] < trigger['ema200']
+                cond_ema_stack = (trigger['ema9'] < trigger['ema200']) and (trigger['ema21'] < trigger['ema200']) and (trigger['ema9'] < trigger['ema21'])
+                if cond_st and cond_px and cond_st_ema and cond_ema_stack:
+                    return True
+        elif side == "short":
+            bearish_regime_mask = (window['st_dir'] == -1) & (window['close'] < window['ema200']) & (window['ema9'] < window['ema21'])
+            if bearish_regime_mask.any():
+                cond_st = trigger['st_dir'] == 1
+                cond_px = trigger['close'] > trigger['ema200']
+                cond_st_ema = trigger['st'] > trigger['ema200']
+                cond_ema_stack = (trigger['ema9'] > trigger['ema200']) and (trigger['ema21'] > trigger['ema200']) and (trigger['ema9'] > trigger['ema21'])
+                if cond_st and cond_px and cond_st_ema and cond_ema_stack:
+                    return True
+        
+        return False

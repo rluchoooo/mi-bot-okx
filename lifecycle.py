@@ -207,3 +207,86 @@ def evaluate(
             ))
 
     return decisions
+
+def evaluate_supertrend_mtf(
+    side:          str,
+    entry:         Decimal,
+    current_sl:    Decimal,
+    price:         Decimal,
+    atr_15m:       Decimal,
+    be_activated:  bool,
+    trail_activated: bool,
+    trail_sl:      Optional[Decimal],
+    df_15m:        Optional[pd.DataFrame] = None,
+) -> list[LifecycleDecision]:
+    decisions: list[LifecycleDecision] = []
+
+    in_profit = (price > entry) if side == "long" else (price < entry)
+
+    # 1. Stop Loss Hit
+    sl_hit = (price <= current_sl) if side == "long" else (price >= current_sl)
+    if sl_hit:
+        reason = "TRAILING_HIT" if trail_activated else "STOP_LOSS_HIT"
+        decisions.append(LifecycleDecision(
+            action=Action.CLOSE_MARKET,
+            reason=reason,
+            log_message=f"?? {reason.replace('_', ' ')}: precio={price:.6f} sl={current_sl:.6f}",
+        ))
+        return decisions
+
+    # 2. Trailing SL hit (precio cruza trailing)
+    if trail_activated and trail_sl is not None:
+        trail_hit = (price <= trail_sl) if side == "long" else (price >= trail_sl)
+        if trail_hit:
+            decisions.append(LifecycleDecision(
+                action=Action.CLOSE_MARKET,
+                reason="TRAILING_HIT",
+                log_message=f"?? Trailing alcanzado: precio={price:.6f} trail_sl={trail_sl:.6f}",
+            ))
+            return decisions
+
+    # 3. Trailing seguimiento (mueve SL con la EMA21)
+    if trail_activated and trail_sl is not None and df_15m is not None and not df_15m.empty:
+        ema21 = Decimal(str(_ema(df_15m['close'], 21).iloc[-1]))
+        updated = max(ema21, trail_sl) if side == "long" else min(ema21, trail_sl)
+        
+        if updated != trail_sl:
+            decisions.append(LifecycleDecision(
+                action=Action.MOVE_SL,
+                reason="TRAIL_MOVE",
+                new_sl=updated,
+                log_message=f"?? Trail SL (EMA21): {trail_sl:.6f} ? {updated:.6f}",
+            ))
+
+    # 4. Trailing Activation (+2.5 ATR)
+    if not trail_activated and df_15m is not None and not df_15m.empty:
+        profit_atr = (price - entry) / atr_15m if side == "long" else (entry - price) / atr_15m
+        if profit_atr >= Decimal("2.5"):
+            ema21 = Decimal(str(_ema(df_15m['close'], 21).iloc[-1]))
+            # En LONG EMA21 < close, en SHORT EMA21 > close para tener sentido
+            ema_valid = (ema21 < price) if side == "long" else (ema21 > price)
+            if ema_valid:
+                new_sl = max(current_sl, ema21) if side == "long" else min(current_sl, ema21)
+                decisions.append(LifecycleDecision(
+                    action=Action.MOVE_SL,
+                    reason="TRAIL_ACTIVATE",
+                    new_sl=new_sl,
+                    log_message=f"?? Trailing ACTIVADO (+2.5 ATR). SL inicial EMA21: {new_sl:.6f}",
+                ))
+                return decisions
+
+    # 5. Breakeven (+2.0 ATR)
+    if not be_activated and not trail_activated and in_profit:
+        profit_atr = (price - entry) / atr_15m if side == "long" else (entry - price) / atr_15m
+        if profit_atr >= Decimal("2.0"):
+            new_sl = entry
+            is_better = (new_sl > current_sl) if side == "long" else (new_sl < current_sl)
+            if is_better:
+                decisions.append(LifecycleDecision(
+                    action=Action.MOVE_SL,
+                    reason="BREAKEVEN_ACTIVATE",
+                    new_sl=new_sl,
+                    log_message=f"??? BREAKEVEN activado (+2.0 ATR). SL movido a entrada: {new_sl:.6f}",
+                ))
+
+    return decisions

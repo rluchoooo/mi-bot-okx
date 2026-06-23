@@ -1521,24 +1521,41 @@ class QuantumBotRuntime:
 
             # Fetch 15m candles if trailing or nearing trailing (for all strategies)
             df_15m = None
-            if td["trail_done"] or td["tp1_done"]:
+            is_mtf = td.get("strategy", "") == "ST_EMA_REGIME_MTF"
+            if td["trail_done"] or td["tp1_done"] or is_mtf:
                 try:
-                    df_15m = await client.candles(td["symbol"], "15m", 50)
+                    df_15m = await client.candles(td["symbol"], "15m", 250)
                 except Exception:
                     pass
+            
+            if is_mtf:
+                if df_15m is not None and not df_15m.empty:
+                    if self.strat_st_ema.exit_signal(td["side"], df_15m):
+                        from lifecycle import Action, LifecycleDecision
+                        decisions = [LifecycleDecision(action=Action.CLOSE_MARKET, reason="OPPOSITE_SIGNAL", log_message=f"🛑 Salida por señal contraria MTF: {td['symbol']}")]
+                        for decision in decisions:
+                            await self._apply_decision(client, td, decision, price, ct_val)
+                        continue
 
-            decisions = evaluate(
-                side=td["side"], entry=td["entry"], tp=td["tp"],
-                current_sl=td["sl"], price=price, qty=td["qty"],
-                ct_val=ct_val, atr_5m=td["atr"], risk_usd=td["risk"],
-                be_activated=td["be_done"], trail_activated=td["trail_done"],
-                trail_sl=td["trail_sl"], peak_price=new_peak,
-                strategy_name=td.get("strategy", ""),
-                tp1_done=td["tp1_done"],
-                tp2_done=td.get("tp2_done", False),
-                opened_at=td["opened_at"],
-                df_5m=df_15m, # Pasamos el de 15m usando el parámetro existente
-            )
+                from lifecycle import evaluate_supertrend_mtf
+                decisions = evaluate_supertrend_mtf(
+                    side=td["side"], entry=td["entry"], current_sl=td["sl"],
+                    price=price, atr_15m=td["atr"], be_activated=td["be_done"],
+                    trail_activated=td["trail_done"], trail_sl=td["trail_sl"], df_15m=df_15m
+                )
+            else:
+                decisions = evaluate(
+                    side=td["side"], entry=td["entry"], tp=td["tp"],
+                    current_sl=td["sl"], price=price, qty=td["qty"],
+                    ct_val=ct_val, atr_5m=td["atr"], risk_usd=td["risk"],
+                    be_activated=td["be_done"], trail_activated=td["trail_done"],
+                    trail_sl=td["trail_sl"], peak_price=new_peak,
+                    strategy_name=td.get("strategy", ""),
+                    tp1_done=td["tp1_done"],
+                    tp2_done=td.get("tp2_done", False),
+                    opened_at=td["opened_at"],
+                    df_5m=df_15m, # Pasamos el de 15m usando el parámetro existente
+                )
 
             for decision in decisions:
                 await self._apply_decision(client, td, decision, price, ct_val)

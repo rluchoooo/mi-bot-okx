@@ -675,17 +675,40 @@ class QuantumBotRuntime:
         tp_to_set = Decimal(str(tp_final)) if tp_final else None
         
         # Determine Breakeven and Trailing based on current price
-        # For MTF, BE is at 2.0 ATR. For SMC, BE is at 1.33 ATR.
-        be_dist = atr_est * 2.0 if strategy_val == Strategy.ST_EMA_REGIME_MTF else atr_est * 1.33
+        be_dist = atr_est * 2.0
         be_price = entry + Decimal(str(be_dist)) if side_str == "long" else entry - Decimal(str(be_dist))
         crossed_be  = (current_price >= be_price) if side_str == "long" else (current_price <= be_price)
+
+        trail_dist = atr_est * 2.5
+        trail_price = entry + Decimal(str(trail_dist)) if side_str == "long" else entry - Decimal(str(trail_dist))
+        crossed_trail = (current_price >= trail_price) if side_str == "long" else (current_price <= trail_price)
 
         trade_status = TradeStatus.OPEN
         profit_lock_active = 0
         trailing_active = 0
         tp1_done = 0
         
-        if crossed_be:
+        if crossed_trail:
+            profit_lock_active = 1
+            trailing_active = 1
+            trade_status = TradeStatus.TRAILING
+            try:
+                res = await client._req("GET", f"/api/v5/market/candles?instId={iid}&bar=15m&limit=100", auth=False)
+                if res:
+                    import pandas as pd
+                    from strategy import _ema
+                    df = pd.DataFrame(res, columns=["ts", "open", "high", "low", "close", "vol", "volCcy", "volCcyQuote", "confirm"])
+                    df['close'] = df['close'].astype(float)
+                    df = df.sort_values('ts').reset_index(drop=True)
+                    ema21 = Decimal(str(_ema(df['close'], 21).iloc[-1]))
+                    ema_valid = (ema21 < current_price) if side_str == "long" else (ema21 > current_price)
+                    if ema_valid:
+                        sl_to_set = max(sl_to_set, ema21) if side_str == "long" else min(sl_to_set, ema21)
+                        self._log(f"[{iid}] 🚀 Guardián detectó ganancia > 2.5 ATR. Trailing EMA21 calculado e inyectado en: {ema21:.6f}")
+            except Exception as e:
+                self._log(f"[{iid}] Error calculando EMA21 para adopción trailing: {e}", "WARN")
+
+        elif crossed_be:
             profit_lock_active = 1
             trade_status = TradeStatus.BREAKEVEN
             from config import LEVERAGE
@@ -695,6 +718,7 @@ class QuantumBotRuntime:
                 sl_to_set = max(sl_to_set, entry + (entry * price_movement_pct))
             else:
                 sl_to_set = min(sl_to_set, entry - (entry * price_movement_pct))
+            self._log(f"[{iid}] 🛡️ Guardián detectó ganancia > 2.0 ATR. Breakeven 15% ROE calculado e inyectado en: {sl_to_set:.6f}")
 
         # Verify it hasn't been added yet concurrently
         already_open = db.query(Trade).filter(

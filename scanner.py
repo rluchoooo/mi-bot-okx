@@ -818,14 +818,15 @@ class QuantumBotRuntime:
                         try:
                             import lifecycle
                             self._log(f"[{inst_id}] 🔧 AUTO-HEAL: Calculando TP1/TP2 faltantes...", "SYSTEM")
-                            atr_est = float(trade.atr) if trade.atr else (trade.entry_price * 0.005 / 2.5)
+                            atr_est = float(trade.atr) if getattr(trade, "atr", None) else (float(trade.entry_price) * 0.005 / 2.5)
                             s_side = trade.side.value if hasattr(trade.side, "value") else str(trade.side).split(".")[-1].lower()
+                            base_price = float(trade.entry_price)
                             if s_side == "long":
-                                trade.tp1_price = trade.entry_price + (float(lifecycle.ATR_TP1) * atr_est)
-                                trade.tp2_price = trade.entry_price + (float(lifecycle.ATR_TP2) * atr_est)
+                                trade.tp1_price = base_price + (float(lifecycle.ATR_TP1) * atr_est)
+                                trade.tp2_price = base_price + (float(lifecycle.ATR_TP2) * atr_est)
                             else:
-                                trade.tp1_price = trade.entry_price - (float(lifecycle.ATR_TP1) * atr_est)
-                                trade.tp2_price = trade.entry_price - (float(lifecycle.ATR_TP2) * atr_est)
+                                trade.tp1_price = base_price - (float(lifecycle.ATR_TP1) * atr_est)
+                                trade.tp2_price = base_price - (float(lifecycle.ATR_TP2) * atr_est)
                             db.commit()
                             self._log(f"[{inst_id}] 🔧 AUTO-HEAL OK: TP1={trade.tp1_price}, TP2={trade.tp2_price}", "SYSTEM")
                         except Exception as ah_err:

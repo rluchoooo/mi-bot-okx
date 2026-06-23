@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-slate-950 text-slate-100 font-sans antialiased overflow-x-hidden;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-slate-900/40 backdrop-blur-md border border-slate-700/50 rounded-xl shadow-xl shadow-slate-900/50;
+  }
+  
+  .glass-card {
+    @apply bg-slate-800/40 backdrop-blur-sm border border-slate-700/30 rounded-lg p-6 hover:bg-slate-800/60 transition-all duration-300;
+  }
+  
+  .neon-text-green {
+    @apply text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.8)];
+  }
+  
+  .neon-text-red {
+    @apply text-rose-400 drop-shadow-[0_0_8px_rgba(251,113,133,0.8)];
+  }
+
+  .neon-border-green {
+    @apply border-emerald-500/50 shadow-[0_0_15px_rgba(52,211,153,0.2)];
+  }
+}
+
+/* Custom Scrollbar for terminal logs */
+.terminal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.terminal-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5); 
+}
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8); 
+  border-radius: 4px;
+}
+.terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 1); 
+}

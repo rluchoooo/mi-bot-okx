@@ -279,14 +279,22 @@ def evaluate_supertrend_mtf(
     if not be_activated and not trail_activated and in_profit:
         profit_atr = (price - entry) / atr_15m if side == "long" else (entry - price) / atr_15m
         if profit_atr >= Decimal("2.0"):
-            new_sl = entry
+            from config import LEVERAGE
+            # ROE 15% means: 15 / LEVERAGE = price movement %
+            price_movement_pct = Decimal("15.0") / Decimal(str(LEVERAGE)) / Decimal("100")
+            
+            if side == "long":
+                new_sl = entry + (entry * price_movement_pct)
+            else:
+                new_sl = entry - (entry * price_movement_pct)
+                
             is_better = (new_sl > current_sl) if side == "long" else (new_sl < current_sl)
             if is_better:
                 decisions.append(LifecycleDecision(
                     action=Action.MOVE_SL,
                     reason="BREAKEVEN_ACTIVATE",
                     new_sl=new_sl,
-                    log_message=f"??? BREAKEVEN activado (+2.0 ATR). SL movido a entrada: {new_sl:.6f}",
+                    log_message=f"🛡️ BREAKEVEN activado (+2.0 ATR). SL movido para asegurar 15% ROE: {new_sl:.6f}",
                 ))
 
     return decisions

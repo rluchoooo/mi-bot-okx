@@ -287,6 +287,7 @@ class QuantumBotRuntime:
 
         self.running         = False
         self.scanning        = False
+        self.opening_allowed = False
         self._lock           = threading.Lock()
         self._log_buffer:    list[str] = []
         self._instruments:   dict[str, dict] = {}
@@ -346,18 +347,48 @@ class QuantumBotRuntime:
     async def _close_all_positions(self) -> None:
         client = self._new_client()
         try:
-            with get_session() as db:
-                from models import Trade, TradeStatus
-                open_trades = db.query(Trade).filter(
-                    Trade.position_closed == 0
-                ).all()
-                for t in open_trades:
+            self._log("☢️ INICIANDO NUCLEAR RESET EN OKX...", "WARN")
+            # 1. Fetch all real positions from OKX
+            positions = await client.get_positions()
+            for p in positions:
+                sym = p.get("instId")
+                pos_side_raw = p.get("posSide", "").lower()
+                qty_raw = float(p.get("pos", 0))
+                
+                # Determine pos_side string expected by close_position
+                if pos_side_raw == "net":
+                    pos_side = "long" if qty_raw >= 0 else "short"
+                else:
+                    pos_side = pos_side_raw
+                    
+                if qty_raw != 0:
                     try:
-                        self._log(f"[{t.symbol}] 🗑️ HARD RESET: Cerrando posición en OKX a mercado.", "WARN")
-                        await client.close_position(t.symbol, t.side)
-                        await client.cancel_algo_orders(t.symbol)
+                        self._log(f"[{sym}] ☢️ Cerrando posición real a mercado: {pos_side.upper()}", "WARN")
+                        await client.close_position(sym, pos_side)
                     except Exception as e:
-                        self._log(f"[{t.symbol}] HARD RESET error: {e}", "ERROR")
+                        self._log(f"[{sym}] ☢️ Error cerrando posición: {e}", "ERROR")
+                    
+                    try:
+                        self._log(f"[{sym}] ☢️ Cancelando órdenes algorítmicas huérfanas", "WARN")
+                        await client.cancel_algo_orders(sym, pos_side)
+                    except Exception as e:
+                        pass
+                        
+            # Cancel all global pending algos just in case
+            try:
+                res = await client._req("GET", "/api/v5/trade/orders-algo-pending?instType=SWAP", auth=True)
+                if res:
+                    for algo in res:
+                        sym = algo.get("instId")
+                        algo_id = algo.get("algoId")
+                        if sym and algo_id:
+                            await client._req("POST", "/api/v5/trade/cancel-algos", [{"instId": sym, "algoId": algo_id}], auth=True)
+            except Exception as e:
+                pass
+                
+            self._log("☢️ NUCLEAR RESET OKX COMPLETADO.", "WARN")
+        except Exception as e:
+            self._log(f"Error global en Nuclear Reset OKX: {e}", "ERROR")
         finally:
             await client.close()
 
@@ -1146,7 +1177,8 @@ class QuantumBotRuntime:
                                 if current_price > 0:
                                     asyncio.create_task(self._apply_decision(client, {"id": t.id, "symbol": t.symbol, "side": side_str, "qty": Decimal(str(t.qty))}, decision, current_price, ct_val))
                 else:
-                    to_open.append(sig)
+                    if self.opening_allowed:
+                        to_open.append(sig)
 
         # ── APERTURA SIMULTÁNEA DE HASTA 10 PARES ──────────────────────────────
         for sig in sorted(to_open, key=lambda s: s.score, reverse=True):

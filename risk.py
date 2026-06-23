@@ -52,7 +52,8 @@ def compute_qty(
     if ct_val == 0 or entry == 0:
         return Decimal("0")
 
-    nominal_size = Decimal("150.0")  # $15 margin * 10x leverage
+    from config import LEVERAGE
+    nominal_size = risk_usd * Decimal(str(LEVERAGE))
     
     # qty × ctVal × entry = nominal_size
     qty_raw = nominal_size / (entry * ct_val)

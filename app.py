@@ -49,7 +49,7 @@ STRATEGY_SHORT = {
     "SMC_FVG_MITIG":          "SMC FVG MITIG",
     "SMC_OB_RETEST":          "SMC OB RETEST",
     "SMC_AMD_PO3":            "SMC AMD PO3",
-    "ST_EMA_REGIME_MTF":      "SUPERTREND EMA PRO",
+    "ST_EMA_REGIME_MTF":      "SuperTrend EMA Regime MTF Pro",
 }
 
 # ──────────────────────────────────────────────────────────────────────

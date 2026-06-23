@@ -660,32 +660,11 @@ class QuantumBotRuntime:
             
         side_str = "long" if side == TradeSide.LONG else "short"
         
-        # 1. Escaneo de Huellas Digitales (Sherlock Holmes)
-        has_tp = False
-        try:
-            pending_algos = []
-            for o_type in ["oco", "conditional"]:
-                res = await client._req("GET", f"/api/v5/trade/orders-algo-pending?instId={iid}&ordType={o_type}", auth=True)
-                if res:
-                    pending_algos.extend(res)
-            
-            for order in pending_algos:
-                # Si tiene tpTriggerPx, o si toma ganancia
-                if order.get("tpTriggerPx") or order.get("slTriggerPx"):
-                    has_tp = True
-                    break
-        except Exception as e:
-            self._log(f"[{iid}] Error escaneando huellas para adopción: {e}", "WARN")
+        # 1. Asignar siempre la Estrategia Principal
+        strategy_val = Strategy.ST_EMA_REGIME_MTF
+        strat_name_log = "SuperTrend EMA Regime MTF Pro"
 
-        # 2. Deducción de la Estrategia
-        if has_tp:
-            strategy_val = Strategy.SMC_LIQ_SWEEP # Representa QUANTUM V13 PRO
-            strat_name_log = "QUANTUM V13 PRO (Recuperado)"
-        else:
-            strategy_val = Strategy.ST_EMA_REGIME_MTF # Representa SUPERTREND
-            strat_name_log = "SUPERTREND (Recuperado)"
-
-        self._log(f"[{iid}] 🔍 Inteligencia Deductiva: {strat_name_log}", "SYSTEM")
+        self._log(f"[{iid}] 🔍 Adopción Activa: {strat_name_log}", "SYSTEM")
 
         # 3. Reconstrucción del ADN
         atr_est = float(entry * Decimal("0.005") / Decimal("2.5"))

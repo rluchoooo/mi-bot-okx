@@ -6,7 +6,7 @@ import os
 from decimal import Decimal
 
 # ── RIESGO ────────────────────────────────────────────────────────────
-FIXED_RISK_USDT       = Decimal("8.0")
+FIXED_RISK_USDT       = Decimal("15.0")
 LEVERAGE              = 10
 MAX_CONCURRENT_TRADES = 5
 SAME_SYMBOL_ONLY      = False
@@ -15,7 +15,7 @@ MAX_POSITION_VAL_USDT = Decimal("800.0")   # Salvaguarda: nominal máximo en USD
 
 # ── SCANNER ───────────────────────────────────────────────────────────
 SCAN_INTERVAL_SECONDS = 15
-TOP_COINS_LIMIT       = 25
+TOP_COINS_LIMIT       = 20
 MIN_VOLUME_24H        = 100_000       # USDT mínimo de volumen 24h
 LIMIT_ORDER_OFFSET_PCT = Decimal("0.0002")  # ±0.02% offset en precio límite
 

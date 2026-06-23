@@ -612,6 +612,7 @@ class QuantumBotRuntime:
         from decimal import Decimal
         from order_execution_engine import OrderExecutionEngine
         import lifecycle
+        from risk_manager import risk_manager
 
         entry = Decimal(pos.get("avgPx", "0"))
         qty_raw = float(pos.get("pos", "0"))
@@ -627,54 +628,64 @@ class QuantumBotRuntime:
             side = TradeSide.LONG if side_raw == "long" else TradeSide.SHORT
             
         side_str = "long" if side == TradeSide.LONG else "short"
-        # Calcular ATR estricto como lo usa el bot
-        atr_est = entry * Decimal("0.005") / Decimal("2.5")
         
-        # Calcular niveles de ciclo de vida
-        tp1_price = entry + (lifecycle.ATR_TP1 * atr_est) if side_str == "long" else entry - (lifecycle.ATR_TP1 * atr_est)
-        tp2_price = entry + (lifecycle.ATR_TP2 * atr_est) if side_str == "long" else entry - (lifecycle.ATR_TP2 * atr_est)
-        be_price  = entry + (lifecycle.ATR_BREAKEVEN * atr_est) if side_str == "long" else entry - (lifecycle.ATR_BREAKEVEN * atr_est)
+        # 1. Escaneo de Huellas Digitales (Sherlock Holmes)
+        has_tp = False
+        try:
+            pending_algos = []
+            for o_type in ["oco", "conditional"]:
+                res = await client._req("GET", f"/api/v5/trade/orders-algo-pending?instId={iid}&ordType={o_type}", auth=True)
+                if res:
+                    pending_algos.extend(res)
+            
+            for order in pending_algos:
+                # Si tiene tpTriggerPx, o si toma ganancia
+                if order.get("tpTriggerPx") or order.get("slTriggerPx"):
+                    has_tp = True
+                    break
+        except Exception as e:
+            self._log(f"[{iid}] Error escaneando huellas para adopción: {e}", "WARN")
+
+        # 2. Deducción de la Estrategia
+        if has_tp:
+            strategy_val = Strategy.SMC_LIQ_SWEEP # Representa QUANTUM V13 PRO
+            strat_name_log = "QUANTUM V13 PRO (Recuperado)"
+        else:
+            strategy_val = Strategy.ST_EMA_REGIME_MTF # Representa SUPERTREND
+            strat_name_log = "SUPERTREND (Recuperado)"
+
+        self._log(f"[{iid}] 🔍 Inteligencia Deductiva: {strat_name_log}", "SYSTEM")
+
+        # 3. Reconstrucción del ADN
+        atr_est = float(entry * Decimal("0.005") / Decimal("2.5"))
+        levels = risk_manager.calculate_levels(float(entry), atr_est, side_str, ct_val=1.0, lot_sz=1.0, strategy=strategy_val.value)
         
+        sl_to_set = Decimal(str(levels["sl_price"]))
+        tp_final = levels.get("tp_final")
+        tp_to_set = Decimal(str(tp_final)) if tp_final else None
+        
+        # Determine Breakeven and Trailing based on current price
+        # For MTF, BE is at 2.0 ATR. For SMC, BE is at 1.33 ATR.
+        be_dist = atr_est * 2.0 if strategy_val == Strategy.ST_EMA_REGIME_MTF else atr_est * 1.33
+        be_price = entry + Decimal(str(be_dist)) if side_str == "long" else entry - Decimal(str(be_dist))
         crossed_be  = (current_price >= be_price) if side_str == "long" else (current_price <= be_price)
-        crossed_tp1 = (current_price >= tp1_price) if side_str == "long" else (current_price <= tp1_price)
 
         trade_status = TradeStatus.OPEN
         profit_lock_active = 0
         trailing_active = 0
         tp1_done = 0
         
-        from risk import compute_sl, breakeven_sl
-        
-        if crossed_tp1:
-            tp1_done = 1
-            trailing_active = 1
-            trade_status = TradeStatus.TRAILING
-            tp_to_set = None
-            df_15m = None
-            try:
-                df_15m = await client.candles(iid, "15m", 50)
-                if df_15m is not None and not df_15m.empty:
-                    ema21 = lifecycle._ema(df_15m['close'], 21).iloc[-1]
-                    sl_to_set = Decimal(str(ema21))
-                else:
-                    sl_to_set = current_price * Decimal("0.98") if side_str == "long" else current_price * Decimal("1.02")
-            except:
-                sl_to_set = current_price * Decimal("0.98") if side_str == "long" else current_price * Decimal("1.02")
-            state_msg = "[ALTA GANANCIA] - Trailing Stop"
-            
-        elif crossed_be:
+        if crossed_be:
             profit_lock_active = 1
             trade_status = TradeStatus.BREAKEVEN
-            sl_to_set = breakeven_sl(entry, side_str, atr=atr_est)
-            tp_to_set = tp1_price
-            state_msg = "[POCA GANANCIA] - SL en Breakeven"
-        else:
-            sl_to_set = compute_sl(entry, side_str, atr_est)
-            tp_to_set = tp1_price
-            state_msg = "[PÉRDIDA/INICIO] - SL original"
+            from config import LEVERAGE
+            # ROE 15% means: 15 / LEVERAGE = price movement %
+            price_movement_pct = Decimal("15.0") / Decimal(str(LEVERAGE)) / Decimal("100")
+            if side_str == "long":
+                sl_to_set = max(sl_to_set, entry + (entry * price_movement_pct))
+            else:
+                sl_to_set = min(sl_to_set, entry - (entry * price_movement_pct))
 
-        sl_to_set = Decimal(str(sl_to_set))
-        
         # Verify it hasn't been added yet concurrently
         already_open = db.query(Trade).filter(
             Trade.symbol == iid,
@@ -685,11 +696,12 @@ class QuantumBotRuntime:
         if already_open:
             return
 
+        from risk import breakeven_sl
         trade = Trade(
-            symbol=iid, side=side, strategy=Strategy.ST_EMA_REGIME_MTF,
+            symbol=iid, side=side, strategy=strategy_val,
             entry_price=float(entry), position_size=qty, remaining_size=qty,
             sl_price=float(sl_to_set), tp_price=float(tp_to_set) if tp_to_set else None,
-            tp1_price=float(tp1_price), tp2_price=float(tp2_price),
+            tp1_price=float(levels.get("tp1_price", 0) or 0), tp2_price=float(levels.get("tp2_price", 0) or 0),
             profit_lock_price=float(be_price), profit_lock_sl=float(breakeven_sl(entry, side_str, atr_est)),
             atr=float(atr_est), risk_usd=float(FIXED_RISK_USDT), leverage=int(pos.get("lever", 10)),
             status=trade_status, highest_price=float(max(entry, current_price)), lowest_price=float(min(entry, current_price)),
@@ -699,7 +711,7 @@ class QuantumBotRuntime:
         db.add(trade)
         db.commit()
         
-        self._log(f"[{iid}] Adoptando dinámicamente: {state_msg}. Enviando protecciones nativas a OKX...")
+        self._log(f"[{iid}] Adoptando dinámicamente como {strat_name_log}. Enviando protecciones nativas a OKX...")
         
         try:
             await client.cancel_algo_orders(iid, side_str)

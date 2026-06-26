@@ -1,27 +1,50 @@
 from decimal import Decimal
 
 class RiskManager:
-    MAX_SL_MULTIPLIER = 2.0
-    MIN_SL_MULTIPLIER = 1.0
-    TP_MULTIPLIER = 5.0
-    
     @staticmethod
-    def calculate_levels(entry_price: float, atr: float, side: str, ct_val: float = 1.0, lot_sz: float = 1.0, strategy: str = "") -> dict:
-        is_mtf = strategy == "ST_EMA_REGIME_MTF"
-        sl_distance = atr * 2.5 if is_mtf else atr * 2.0
+    def calculate_levels(entry_price: float, atr: float, side: str, ct_val: float = 1.0, lot_sz: float = 1.0, strategy: str = "", signal_sl: float = None, signal_tp: float = None) -> dict:
+        is_mtf = strategy in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED")
+        is_ag = strategy == "ANTIGRAVITY_V13_PRO"
+        
+        # Base SL for both is 2.5 ATR
+        sl_distance = atr * 2.5
+        
+        # Max 8.5% loss cap for SL
+        max_sl_dist = entry_price * 0.085
+        if sl_distance > max_sl_dist:
+            sl_distance = max_sl_dist
+            
+        # 15% ROE offset is 1.5% spot move at 10x leverage
+        roe_offset = entry_price * 0.015
         
         if side == "long":
             sl = entry_price - sl_distance
-            tp1_price = entry_price + (atr * 1.2)
-            tp2_price = entry_price + (atr * 2.4)
-            profit_lock_trigger = entry_price + (atr * 1.33)
-            tp_final = None if is_mtf else entry_price + (atr * 4.0)
+            tp_final = None # Both use Trailing Stop for final closure
+            
+            if is_ag:
+                tp1_price = entry_price + (atr * 1.5)
+                tp2_price = entry_price + (atr * 3.0)
+                profit_lock_trigger = entry_price + (entry_price * 0.0333) # 33.3% ROE
+            else:
+                tp1_price = None
+                tp2_price = None
+                profit_lock_trigger = entry_price + (atr * 1.5)
+                
+            profit_lock_sl = entry_price + roe_offset
         else:
             sl = entry_price + sl_distance
-            tp1_price = entry_price - (atr * 1.2)
-            tp2_price = entry_price - (atr * 2.4)
-            profit_lock_trigger = entry_price - (atr * 1.33)
-            tp_final = None if is_mtf else entry_price - (atr * 4.0)
+            tp_final = None
+            
+            if is_ag:
+                tp1_price = entry_price - (atr * 1.5)
+                tp2_price = entry_price - (atr * 3.0)
+                profit_lock_trigger = entry_price - (entry_price * 0.0333)
+            else:
+                tp1_price = None
+                tp2_price = None
+                profit_lock_trigger = entry_price - (atr * 1.5)
+                
+            profit_lock_sl = entry_price - roe_offset
             
         return {
             "entry_price": entry_price,
@@ -31,7 +54,7 @@ class RiskManager:
             "tp1_price": tp1_price,
             "tp2_price": tp2_price,
             "profit_lock_trigger": profit_lock_trigger,
-            "profit_lock_sl": entry_price # Se mueve al entry
+            "profit_lock_sl": profit_lock_sl
         }
 
 risk_manager = RiskManager()

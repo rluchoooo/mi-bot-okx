@@ -36,7 +36,7 @@ from risk import (
     breakeven_sl, compute_qty, compute_sl,
     pnl_pct_of_risk, pnl_usd
 )
-from strategy import Signal, SMCPDHSweepReversal, SMCFVGMitigation, SMCOrderblockBounce, SMCAMDBreakout, SuperTrendEMARegimeMTFPro
+from strategy import Signal, AntigravityQuantumV13Pro, SuperTrendEMARegimeMTFPro
 
 
 # ──────────────────────────────────────────────
@@ -136,6 +136,18 @@ class OKXClient:
             
         rows = await self._req("POST", "/api/v5/trade/order", payload, auth=True)
         return rows[0].get("ordId", "") if rows else ""
+
+    async def cancel_all_orders(self, inst_id: str) -> None:
+        try:
+            # 1. Cancel limit pending orders
+            pending = await self._req("GET", f"/api/v5/trade/orders-pending?instId={inst_id}", auth=True)
+            if pending:
+                payload = [{"instId": inst_id, "ordId": p["ordId"]} for p in pending[:20]]
+                await self._req("POST", "/api/v5/trade/cancel-batch-orders", payload, auth=True)
+            # 2. Cancel conditional/algo orders
+            await self.cancel_algo_orders(inst_id)
+        except Exception as e:
+            pass
 
     async def cancel_algo_orders(self, inst_id: str, pos_side: str = None) -> None:
         try:
@@ -279,10 +291,7 @@ class QuantumBotRuntime:
         self.simulated  = simulated
 
         self.shield          = MacroShield()
-        self.strat_pdh = SMCPDHSweepReversal()
-        self.strat_fvg = SMCFVGMitigation()
-        self.strat_ob = SMCOrderblockBounce()
-        self.strat_amd = SMCAMDBreakout()
+        self.strat_antigravity = AntigravityQuantumV13Pro()
         self.strat_st_ema = SuperTrendEMARegimeMTFPro()
 
         self.running         = False
@@ -293,8 +302,33 @@ class QuantumBotRuntime:
         self._instruments:   dict[str, dict] = {}
         self.compliance_restricted = set()  # Local set of compliance restricted symbols (error 51155)
         self._pending_entries: dict[str, dict] = {}  # ord_id -> dict with entry data
+        self._load_cerebro()
+        
         self.current_exchange_balance: float = 0.0
         self.last_positions: dict = {}
+
+    def _load_cerebro(self):
+        import json, os
+        cerebro_path = "cerebro_pending.json"
+        if os.path.exists(cerebro_path):
+            try:
+                with open(cerebro_path, "r", encoding="utf-8") as f:
+                    self._pending_entries = json.load(f)
+                self._log("🧠 CEREBRO CONECTADO: Memoria de órdenes pendiente restaurada.", "SYSTEM")
+            except Exception as e:
+                self._log(f"🧠 CEREBRO DAÑADO: {e}", "ERROR")
+                self._pending_entries = {}
+        else:
+            self._pending_entries = {}
+
+    def _save_cerebro(self):
+        import json
+        try:
+            with open("cerebro_pending.json", "w", encoding="utf-8") as f:
+                json.dump(self._pending_entries, f)
+        except Exception:
+            pass
+
 
         self.last_scan       = "never"
         self.last_error      = ""
@@ -302,9 +336,6 @@ class QuantumBotRuntime:
 
     def _new_client(self) -> OKXClient:
         return OKXClient(self.api_key, self.api_secret, self.passphrase, self.simulated)
-
-    # ── Logging ──────────────────────────────────────────────────────
-
     def _log(self, msg: str, level: str = "INFO") -> None:
         stamp = datetime.utcnow().strftime("%H:%M:%S")
         line  = f"{stamp} | [{level}] {msg}"
@@ -332,12 +363,29 @@ class QuantumBotRuntime:
                 self.scanning = True
                 self._log("MOTOR ESCÁNER REANUDADO INMEDIATAMENTE.", "SYSTEM")
             return "already_running"
+        
+        # Ensure thread-safety globally (across hot-reloads)
+        import threading
+        for th in threading.enumerate():
+            if th.name == "QuantumScannerThread" and th.is_alive():
+                self._log("⚠️ Hilo de escáner previo detectado. Evitando duplicación.", "WARN")
+                return "already_running"
+            
         self.running = True
         self.scanning = True
-        self._thread = threading.Thread(target=lambda: asyncio.run(self._main()), daemon=True)
+        self._thread = threading.Thread(target=self._run_main_sync, daemon=True, name="QuantumScannerThread")
         self._thread.start()
         self._log("MOTOR QUANTUM ENCENDIDO")
         return "started"
+
+    def _run_main_sync(self):
+        # Create a new event loop for this thread to prevent "cannot schedule new futures" error
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._main())
+        finally:
+            loop.close()
 
     def stop(self) -> str:
         self.scanning = False
@@ -457,6 +505,7 @@ class QuantumBotRuntime:
             await recovery.run_recovery()
             
             position_manager = PositionManager(execution_engine, client)
+            self._position_manager = position_manager
             
             await asyncio.gather(
                 self._scanner_loop(client),
@@ -555,7 +604,7 @@ class QuantumBotRuntime:
                     c_time_ms = float(r.get("cTime", u_time_ms))
                     opened_at_dt = datetime.utcfromtimestamp(c_time_ms / 1000)
                     db.add(Trade(
-                        symbol=inst_id, side=side, strategy=Strategy.ST_EMA_REGIME_MTF,
+                        symbol=inst_id, side=side, strategy=Strategy.AUTO_ADOPTED,
                         status=TradeStatus.CLOSED, entry_price=entry, position_size=qty, remaining_size=0,
                         sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
                         tp_price=entry * (1.10 if side == TradeSide.LONG else 0.90),
@@ -660,9 +709,25 @@ class QuantumBotRuntime:
             
         side_str = "long" if side == TradeSide.LONG else "short"
         
-        # 1. Asignar siempre la Estrategia Principal
-        strategy_val = Strategy.ST_EMA_REGIME_MTF
-        strat_name_log = "SuperTrend EMA Regime MTF Pro"
+        # 1. Asignar Estrategia recordando la operación (Cerebro)
+        strategy_val = Strategy.AUTO_ADOPTED
+        strat_name_log = "AUTO ADOPTED"
+        
+        import json, os
+        cerebro_path = "cerebro.json"
+        if os.path.exists(cerebro_path):
+            try:
+                with open(cerebro_path, "r", encoding="utf-8") as f:
+                    cerebro_data = json.load(f)
+                    if iid in cerebro_data:
+                        saved_strat = cerebro_data[iid]
+                        for s in Strategy:
+                            if s.value == saved_strat:
+                                strategy_val = s
+                                strat_name_log = saved_strat
+                                break
+            except Exception:
+                pass
 
         self._log(f"[{iid}] 🔍 Adopción Activa: {strat_name_log}", "SYSTEM")
 
@@ -817,7 +882,8 @@ class QuantumBotRuntime:
                     tp_count = sum(1 for a in algos_for_sym if a.get("tpTriggerPx"))
                     
                     # AUTO-HEAL: Fill missing TP targets if adopted previously without them (Skip for SuperTrend)
-                    if trade.strategy != Strategy.ST_EMA_REGIME_MTF:
+                    strat_str = trade.strategy.value if hasattr(trade.strategy, "value") else str(trade.strategy)
+                    if strat_str not in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED"):
                         if not getattr(trade, "tp1_price", None) or not getattr(trade, "tp2_price", None):
                             try:
                                 import lifecycle
@@ -840,7 +906,8 @@ class QuantumBotRuntime:
                     expected_sl = 1 if trade.sl_price else 0
                     expected_tp = 0
                     
-                    if trade.strategy == Strategy.ST_EMA_REGIME_MTF:
+                    strat_str = trade.strategy.value if hasattr(trade.strategy, "value") else str(trade.strategy)
+                    if strat_str in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED"):
                         expected_tp = 0 # SuperTrend strictly does NOT use fixed TP orders.
                     else:
                         if not getattr(trade, "tp1_filled", 0):
@@ -1039,7 +1106,7 @@ class QuantumBotRuntime:
                         t = Trade(
                             symbol=sym,
                             side=side,
-                            strategy=Strategy.ST_EMA_REGIME_MTF,
+                            strategy=Strategy.AUTO_ADOPTED,
                             status=TradeStatus.OPEN if not tp2_done else TradeStatus.TRAILING,
                             entry_price=entry,
                             qty=qty,
@@ -1121,17 +1188,17 @@ class QuantumBotRuntime:
             iid = tick["instId"]
             if iid in cdwn_syms or iid in self.compliance_restricted or iid not in self._instruments:
                 continue
+            # Cooldown de 1 hora si un trade tocó SL en negativo
+            if hasattr(self, '_position_manager') and self._position_manager.is_in_cooldown(iid):
+                continue
             try:
                 df_1h, df_15m, df_5m = await asyncio.gather(
-                    client.candles(iid, "1H", 300),
-                    client.candles(iid, "15m", 300),
-                    client.candles(iid, "5m", 150),
+                    client.candles(iid, "1H", 500),
+                    client.candles(iid, "15m", 500),
+                    client.candles(iid, "5m", 300),
                 )
                 for sig in [
-                    self.strat_pdh.signal(iid, df_1h, df_15m, df_5m),
-                    self.strat_fvg.signal(iid, df_1h, df_15m, df_5m),
-                    self.strat_ob.signal(iid, df_1h, df_15m, df_5m),
-                    self.strat_amd.signal(iid, df_1h, df_15m, df_5m),
+                    self.strat_antigravity.signal(iid, df_1h, df_15m, df_5m),
                     self.strat_st_ema.signal(iid, df_1h, df_15m, df_5m),
                 ]:
                     if sig:
@@ -1161,7 +1228,7 @@ class QuantumBotRuntime:
         with get_session() as db:
             for sig in candidates:
                 if sig.symbol in temp_active:
-                    if sig.strategy == "ST_EMA_REGIME_MTF":
+                    if sig.strategy == "ST_EMA_REGIME_MTF_PRO":
                         t = db.query(Trade).filter(
                             Trade.symbol == sig.symbol, 
                             Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
@@ -1189,25 +1256,26 @@ class QuantumBotRuntime:
                         to_open.append(sig)
 
         # ── APERTURA SIMULTÁNEA DE HASTA 10 PARES ──────────────────────────────
+        final_to_open = []
         for sig in sorted(to_open, key=lambda s: s.score, reverse=True):
             if len(temp_active) >= MAX_CONCURRENT_TRADES:
                 break
             if sig.symbol in temp_active:
                 continue
-            to_open.append(sig)
+            final_to_open.append(sig)
             temp_active.add(sig.symbol)   # reservar el slot ya
 
-        if not to_open:
+        if not final_to_open:
             return
 
         self._log(
-            f"🚀 LANZANDO {len(to_open)} ENTRADAS EN PARALELO: "
-            + ", ".join(s.symbol for s in to_open),
+            f"🚀 LANZANDO {len(final_to_open)} ENTRADAS EN PARALELO: "
+            + ", ".join(s.symbol for s in final_to_open),
             "SYSTEM"
         )
 
         results = await asyncio.gather(
-            *[self._open_trade(client, sig) for sig in to_open],
+            *[self._open_trade(client, sig) for sig in final_to_open],
             return_exceptions=True
         )
 
@@ -1245,7 +1313,9 @@ class QuantumBotRuntime:
         atr = float(sig.atr_5m)
         
         from risk_manager import risk_manager
-        levels = risk_manager.calculate_levels(entry_price, atr, sig.side, float(ct_val), float(lot_sz), sig.strategy)
+        sig_sl = float(sig.sl_price) if getattr(sig, 'sl_price', None) is not None else None
+        sig_tp = float(sig.tp_price) if getattr(sig, 'tp_price', None) is not None else None
+        levels = risk_manager.calculate_levels(entry_price, atr, sig.side, float(ct_val), float(lot_sz), sig.strategy, signal_sl=sig_sl, signal_tp=sig_tp)
         
         sl = float(_round_tick(Decimal(str(levels["sl_price"]))))
         
@@ -1286,6 +1356,7 @@ class QuantumBotRuntime:
                     "tick_sz": tick_sz,
                     "lot_sz": lot_sz
                 }
+                self._save_cerebro()
                 self._log(f"[{iid}] ⏳ Orden Límite enviada (ordId: {ord_id}). Esperando 15 mins para fill...", "SYSTEM")
                 return True
             else:
@@ -1334,6 +1405,7 @@ class QuantumBotRuntime:
                         except: pass
                         self._log(f"[{data['symbol']}] ⏰ Orden Límite expiró tras {STALE_ORDER_MINUTES}m. Cancelada.", "WARN")
                         self._pending_entries.pop(ord_id, None)
+                        self._save_cerebro()
                         continue
 
                     # Poll OKX for state
@@ -1344,6 +1416,8 @@ class QuantumBotRuntime:
                         
                         if state in ("canceled", "mismatch"):
                             self._pending_entries.pop(ord_id, None)
+                            self._save_cerebro()
+                            self._save_cerebro()
                             continue
                             
                         if state == "filled":
@@ -1383,6 +1457,7 @@ class QuantumBotRuntime:
                             self._log(f"[{data['symbol']}] ✅ Orden Límite FILLED. Trade guardado y TPs/SL colocados.", "SYSTEM")
                             
                             self._pending_entries.pop(ord_id, None)
+                            self._save_cerebro()
                     except Exception as e:
                         pass
             except Exception as e:
@@ -1450,69 +1525,75 @@ class QuantumBotRuntime:
                         active_snapshots.append(t)
                     else:
                         # Position is closed. Sync natively closed position details from history!
-                        history = await client.get_positions_history(t.symbol, limit=1)
+                        history = await client.get_positions_history(t.symbol, limit=5)
                         success_sync = False
                         if history:
-                            last_closed = history[0]
-                            c_time_ms = float(last_closed.get("cTime", 0))
-                            u_time_ms = float(last_closed.get("uTime", 0))
-                            closed_at_dt = datetime.utcfromtimestamp(u_time_ms / 1000)
-                            
-                            opened_at_ts = t.opened_at.replace(tzinfo=timezone.utc).timestamp() if t.opened_at.tzinfo is None else t.opened_at.timestamp()
-                            if (c_time_ms / 1000) >= (opened_at_ts - 60):
-                                real_entry = float(last_closed.get("openAvgPx", t.entry_price))
-                                real_exit = float(last_closed.get("closeAvgPx", 0))
-                                real_pnl = float(last_closed.get("realizedPnl", 0))
+                            for last_closed in history:
+                                c_time_ms = float(last_closed.get("cTime", 0))
+                                u_time_ms = float(last_closed.get("uTime", 0))
+                                closed_at_dt = datetime.utcfromtimestamp(u_time_ms / 1000)
                                 
-                                # Determine close reason
-                                close_reason = "OKX_NATIVE_CLOSE"
-                                side_str = t.side.value if hasattr(t.side, "value") else str(t.side)
-                                is_win_or_scratch = (real_exit >= t.entry_price) if side_str == "long" else (real_exit <= t.entry_price)
+                                opened_at_ts = t.opened_at.replace(tzinfo=timezone.utc).timestamp() if t.opened_at.tzinfo is None else t.opened_at.timestamp()
                                 
-                                if t.tp_price and abs(real_exit - t.tp_price) / t.tp_price < 0.01:
-                                    close_reason = "TAKE_PROFIT_HIT"
-                                elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
-                                    close_reason = "TRAILING_HIT"
-                                elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
-                                    if t.status == TradeStatus.BREAKEVEN or t.profit_lock_active:
-                                        close_reason = "BREAKEVEN_HIT"
-                                    elif t.status == TradeStatus.TRAILING or t.trailing_active:
+                                # Si la posición se actualizó/cerró DESPUÉS de que nosotros la abrimos en DB (con margen de tolerancia)
+                                if (u_time_ms / 1000) >= (opened_at_ts - 10):
+                                    real_entry = float(last_closed.get("openAvgPx", t.entry_price))
+                                    real_exit = float(last_closed.get("closeAvgPx", 0))
+                                    real_pnl = float(last_closed.get("realizedPnl", 0))
+                                    
+                                    # Determine close reason
+                                    close_reason = "OKX_NATIVE_CLOSE"
+                                    side_str = t.side.value if hasattr(t.side, "value") else str(t.side)
+                                    is_win_or_scratch = (real_exit >= t.entry_price) if side_str == "long" else (real_exit <= t.entry_price)
+                                    
+                                    if t.tp_price and abs(real_exit - t.tp_price) / t.tp_price < 0.01:
+                                        close_reason = "TAKE_PROFIT_HIT"
+                                    elif t.trail_sl and abs(real_exit - t.trail_sl) / t.trail_sl < 0.01:
                                         close_reason = "TRAILING_HIT"
-                                    elif is_win_or_scratch:
-                                        close_reason = "BREAKEVEN_HIT"
+                                    elif t.sl_price and abs(real_exit - t.sl_price) / t.sl_price < 0.01:
+                                        if t.status == TradeStatus.BREAKEVEN or t.profit_lock_active:
+                                            close_reason = "BREAKEVEN_HIT"
+                                        elif t.status == TradeStatus.TRAILING or t.trailing_active:
+                                            close_reason = "TRAILING_HIT"
+                                        elif is_win_or_scratch:
+                                            close_reason = "BREAKEVEN_HIT"
+                                        else:
+                                            close_reason = "STOP_LOSS_HIT"
                                     else:
-                                        close_reason = "STOP_LOSS_HIT"
-                                else:
-                                    if is_win_or_scratch:
-                                        close_reason = "BREAKEVEN_HIT"
-                                    else:
-                                        close_reason = "STOP_LOSS_HIT"
+                                        if is_win_or_scratch:
+                                            close_reason = "BREAKEVEN_HIT"
+                                        else:
+                                            close_reason = "STOP_LOSS_HIT"
+                                        
+                                    self._log(f"[{t.symbol}] 🔄 Cierre nativo detectado en OKX: Entrada={real_entry} | Salida={real_exit} | PnL={real_pnl} USDT | Razón={close_reason}")
                                     
-                                self._log(f"[{t.symbol}] 🔄 Cierre nativo detectado en OKX: Entrada={real_entry} | Salida={real_exit} | PnL={real_pnl} USDT | Razón={close_reason}")
-                                
-                                t.status = TradeStatus.CLOSED
-                                t.entry_price = real_entry
-                                t.close_price = real_exit
-                                t.realized_pnl = real_pnl
-                                t.close_reason = close_reason
-                                t.closed_at = closed_at_dt
-                                
-                                db.add(TradeEvent(
-                                    trade_id=t.id, event_type="CLOSE",
-                                    message=f"Cierre nativo detectado ({close_reason}) | PnL: {real_pnl:.2f} USDT (OKX)",
-                                    price=real_exit
-                                ))
-                                
-                                if real_pnl < 0:
-                                    until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
-                                    ex = db.query(Cooldown).filter(Cooldown.symbol == t.symbol).first()
-                                    if ex:
-                                        ex.until = until
-                                    else:
-                                        db.add(Cooldown(symbol=t.symbol, until=until))
+                                    t.status = TradeStatus.CLOSED
+                                    t.entry_price = real_entry
+                                    t.close_price = real_exit
+                                    t.realized_pnl = real_pnl
+                                    t.close_reason = close_reason
+                                    t.closed_at = closed_at_dt
                                     
-                                db.commit()
-                                success_sync = True
+                                    db.add(TradeEvent(
+                                        trade_id=t.id, event_type="CLOSE",
+                                        message=f"Cierre nativo detectado ({close_reason}) | PnL: {real_pnl:.2f} USDT (OKX)",
+                                        price=real_exit
+                                    ))
+                                    
+                                    if real_pnl < 0:
+                                        until = datetime.utcnow() + timedelta(minutes=COOLDOWN_MINUTES)
+                                        ex = db.query(Cooldown).filter(Cooldown.symbol == t.symbol).first()
+                                        if ex:
+                                            ex.until = until
+                                        else:
+                                            db.add(Cooldown(symbol=t.symbol, until=until))
+                                        
+                                    db.commit()
+                                    success_sync = True
+                                    
+                                    # CANCELAR TODAS LAS ÓRDENES HUÉRFANAS DE ESTA MONEDA
+                                    await client.cancel_all_orders(t.symbol)
+                                    break
                                 
                         if not success_sync:
                             self._log(f"[{t.symbol}] ⚠️ Posición no encontrada en OKX ni en historial. Falso positivo o lag de red detectado. Protegiendo registro en DB (Anti-Amnesia).", "WARN")
@@ -1573,7 +1654,7 @@ class QuantumBotRuntime:
 
             # Fetch 15m candles if trailing or nearing trailing (for all strategies)
             df_15m = None
-            is_mtf = td.get("strategy", "") == "ST_EMA_REGIME_MTF"
+            is_mtf = td.get("strategy", "") in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED")
             if td["trail_done"] or td["tp1_done"] or is_mtf:
                 try:
                     df_15m = await client.candles(td["symbol"], "15m", 250)

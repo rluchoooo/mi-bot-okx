@@ -298,3 +298,58 @@ def evaluate_supertrend_mtf(
                 ))
 
     return decisions
+
+from decimal import Decimal
+from typing import Optional
+
+def evaluate_smc(
+    side:          str,
+    entry:         Decimal,
+    tp:            Optional[Decimal],
+    current_sl:    Decimal,
+    price:         Decimal,
+    be_activated:  bool,
+) -> list:
+    decisions = []
+    
+    # 0. Stop Loss Hit
+    sl_hit = (price <= current_sl) if side == "long" else (price >= current_sl)
+    if sl_hit:
+        from lifecycle import LifecycleDecision, Action
+        decisions.append(LifecycleDecision(
+            action=Action.CLOSE_MARKET,
+            reason="STOP_LOSS_HIT",
+            log_message=f"🛑 STOP LOSS ALCANZADO (SMC): precio={price:.6f} sl={current_sl:.6f}",
+        ))
+        return decisions
+        
+    if tp is not None:
+        # 1. Take Profit Final Hit
+        tp_hit = (price >= tp) if side == "long" else (price <= tp)
+        if tp_hit:
+            from lifecycle import LifecycleDecision, Action
+            decisions.append(LifecycleDecision(
+                action=Action.CLOSE_MARKET,
+                reason="TP_FINAL_HIT",
+                log_message=f"🎯 TP FINAL ESTRUCTURAL ALCANZADO: precio={price:.6f} tp={tp:.6f} → Cierra 100%",
+            ))
+            return decisions
+            
+        # 2. Breakeven at 50% distance
+        if not be_activated:
+            distance = tp - entry if side == "long" else entry - tp
+            be_price = entry + (distance * Decimal("0.5")) if side == "long" else entry - (distance * Decimal("0.5"))
+            be_reached = (price >= be_price) if side == "long" else (price <= be_price)
+            if be_reached:
+                # Mueve SL a la entrada
+                new_sl = entry
+                is_better = (new_sl > current_sl) if side == "long" else (new_sl < current_sl)
+                if is_better:
+                    from lifecycle import LifecycleDecision, Action
+                    decisions.append(LifecycleDecision(
+                        action=Action.MOVE_SL,
+                        reason="BREAKEVEN_ACTIVATE",
+                        new_sl=new_sl,
+                        log_message=f"🛡️ SMC BREAKEVEN AL 50%. SL a entrada: {current_sl:.6f} → {new_sl:.6f}",
+                    ))
+    return decisions

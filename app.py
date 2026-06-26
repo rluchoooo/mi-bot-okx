@@ -50,6 +50,8 @@ STRATEGY_SHORT = {
     "SMC_OB_RETEST":          "SMC OB RETEST",
     "SMC_AMD_PO3":            "SMC AMD PO3",
     "ST_EMA_REGIME_MTF":      "SuperTrend EMA Regime MTF Pro",
+    "ST_EMA_REGIME_MTF_PRO":  "SuperTrend EMA Regime MTF Pro",
+    "ANTIGRAVITY_V13_PRO":    "Antigravity Quantum V13 PRO",
 }
 
 # ──────────────────────────────────────────────────────────────────────

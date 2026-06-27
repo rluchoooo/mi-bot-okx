@@ -69,8 +69,8 @@ const App = () => {
         <header className="glass-panel p-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
             <div className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse' : 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'}`}></div>
-            <h1 className="text-2xl font-bold tracking-wider text-slate-100 uppercase">
-              Quantum <span className="text-blue-400">Terminal</span>
+            <h1 className="text-3xl font-black tracking-wider text-slate-100 uppercase">
+              OKX
             </h1>
           </div>
           

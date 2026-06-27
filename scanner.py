@@ -490,6 +490,17 @@ class QuantumBotRuntime:
         client = self._new_client()
         try:
             await self._load_instruments(client)
+
+            # Migrate old AUTO_ADOPTED trades to ST_EMA_REGIME_MTF_PRO
+            try:
+                from models import Trade, Strategy
+                with get_session() as db:
+                    migrated = db.query(Trade).filter(Trade.strategy == "AUTO_ADOPTED").update({Trade.strategy: Strategy.ST_EMA_REGIME_MTF_PRO}, synchronize_session=False)
+                    if migrated > 0:
+                        db.commit()
+                        self._log(f"Migrados {migrated} trades AUTO_ADOPTED a ST_EMA_REGIME_MTF_PRO en BD.", "SYSTEM")
+            except Exception as e:
+                self._log(f"Error en migración: {e}", "ERROR")
             
             # --- NUEVA ARQUITECTURA ---
             from order_execution_engine import OrderExecutionEngine

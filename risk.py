@@ -43,7 +43,7 @@ def compute_qty(
     sl: Decimal,
     ct_val: Decimal,
     lot_sz: Decimal,
-    risk_usd: Decimal = Decimal("15.0"),
+    risk_usd: Decimal = FIXED_RISK_USDT,
 ) -> Decimal:
     """
     Calcula el número de contratos garantizando un tamaño nominal fijo:

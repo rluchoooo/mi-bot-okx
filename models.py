@@ -11,7 +11,7 @@ from decimal import Decimal
 from sqlalchemy import (
     Column, DateTime, Enum, Float, Integer, String, Text, create_engine, event
 )
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker, synonym
 
 DB_URL = "sqlite:///quantum_bot.db"
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
@@ -87,6 +87,7 @@ class Trade(Base):
     close_reason = Column(String(64), nullable=True)
 
     created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    opened_at    = synonym("created_at")
     updated_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     closed_at    = Column(DateTime, nullable=True)
     

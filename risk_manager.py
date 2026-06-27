@@ -25,12 +25,12 @@ class RiskManager:
                 tp1_price = entry_price + (atr * 1.5)
                 tp2_price = entry_price + (atr * 3.0)
                 profit_lock_trigger = entry_price + (entry_price * 0.0333) # 33.3% ROE
+                profit_lock_sl = entry_price + roe_offset
             else:
                 tp1_price = None
                 tp2_price = None
                 profit_lock_trigger = entry_price + (atr * 1.5)
-                
-            profit_lock_sl = entry_price + roe_offset
+                profit_lock_sl = entry_price + (atr * 0.4)
         else:
             sl = entry_price + sl_distance
             tp_final = None
@@ -39,12 +39,12 @@ class RiskManager:
                 tp1_price = entry_price - (atr * 1.5)
                 tp2_price = entry_price - (atr * 3.0)
                 profit_lock_trigger = entry_price - (entry_price * 0.0333)
+                profit_lock_sl = entry_price - roe_offset
             else:
                 tp1_price = None
                 tp2_price = None
                 profit_lock_trigger = entry_price - (atr * 1.5)
-                
-            profit_lock_sl = entry_price - roe_offset
+                profit_lock_sl = entry_price - (atr * 0.4)
             
         return {
             "entry_price": entry_price,

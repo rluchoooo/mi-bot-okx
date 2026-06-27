@@ -60,6 +60,15 @@ STRATEGY_SHORT = {
 
 app = FastAPI(title="OKX Quantum Elite API")
 
+@app.middleware("http")
+async def add_no_cache_headers(request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 @app.get("/api/dashboard")
 async def get_dashboard_data():
     open_trades   = runtime.get_open_trades()
@@ -195,7 +204,7 @@ async def stop_bot():
 
 @app.post("/api/reset")
 async def reset_bot():
-    runtime.reset_database()
+    await runtime.reset_database()
     return {"status": "reset"}
 
 # Serve frontend static files

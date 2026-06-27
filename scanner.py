@@ -440,16 +440,16 @@ class QuantumBotRuntime:
         finally:
             await client.close()
 
-    def reset_database(self) -> str:
+    async def reset_database(self) -> str:
         # First fully kill everything so it unlocks DB
         self.scanning = False
         self.running = False
         if hasattr(self, "ws_agent") and self.ws_agent:
             self.ws_agent.stop()
             
-        # Then forcefully close all active ones in OKX synchronously blocking
+        # Then forcefully close all active ones in OKX
         try:
-            asyncio.run(self._close_all_positions())
+            await self._close_all_positions()
         except Exception as e:
             self._log(f"Error closing positions: {e}", "ERROR")
 
@@ -710,8 +710,8 @@ class QuantumBotRuntime:
         side_str = "long" if side == TradeSide.LONG else "short"
         
         # 1. Asignar Estrategia recordando la operación (Cerebro)
-        strategy_val = Strategy.AUTO_ADOPTED
-        strat_name_log = "AUTO ADOPTED"
+        strategy_val = Strategy.ST_EMA_REGIME_MTF_PRO
+        strat_name_log = "ST_EMA_REGIME_MTF_PRO"
         
         import json, os
         cerebro_path = "cerebro.json"

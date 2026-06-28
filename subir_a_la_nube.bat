@@ -14,7 +14,7 @@ echo     Dale clic a "Sign in with your browser"
 echo ==============================================
 echo.
 
-git push origin main
+git push -f origin main
 
 echo.
 echo ==============================================

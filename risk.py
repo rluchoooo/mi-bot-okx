@@ -70,11 +70,12 @@ def compute_qty(
 
 def breakeven_sl(entry: Decimal, side: str, atr: Decimal = Decimal("0"), tp_dist: Decimal = Decimal("0")) -> Decimal:
     """
-    SL de breakeven = entrada +/- 0.4 ATR.
-    Blindaje obligatorio garantizado (10% de la Meta de 4.0 ATR)
+    SL de breakeven: asegura un 12% de ROE de ganancia al activarse.
     """
-    BE_ATR_DIST = Decimal("0.4")
-    lock = BE_ATR_DIST * atr if atr > 0 else Decimal("0.10") * tp_dist
+    from config import LEVERAGE
+    # 12% ROE = 12 / LEVERAGE % de movimiento de precio
+    price_movement_pct = Decimal("12.0") / Decimal(str(LEVERAGE)) / Decimal("100")
+    lock = entry * price_movement_pct
     return entry + lock if side == "long" else entry - lock
 
 

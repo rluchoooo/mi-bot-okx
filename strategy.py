@@ -191,20 +191,18 @@ class AntigravityQuantumV13Pro:
         long_trend = (
             trigger['close'] > trigger['ema100'] and
             trigger['ema20'] > trigger['ema50'] and
-            all(df['ema20'].iloc[-2-i] > df['ema20'].iloc[-3-i] for i in range(3)) and  # EMA20 rising 3 candles
-            all(df['ema9'].iloc[-2-i] > df['ema9'].iloc[-3-i] for i in range(2))  # EMA9 rising 2 candles
+            df['ema20'].iloc[-2] > df['ema20'].iloc[-3] and  # EMA20 subiendo 1 vela
+            df['ema9'].iloc[-2] > df['ema9'].iloc[-3]        # EMA9 subiendo 1 vela
         )
         long_volume = (
-            trigger['volume'] > trigger['vol_sma20'] * 1.05 and
-            trigger['volume'] > trigger['vol_sma50'] * 0.85
+            trigger['volume'] > trigger['vol_sma20']
         )
-        long_adx = trigger['adx'] > 14 and trigger['plus_di'] > trigger['minus_di']
+        long_adx = trigger['adx'] > 12 and trigger['plus_di'] > trigger['minus_di']
         long_rsi = 30 < trigger['rsi'] < 80
         long_macd = trigger['macd'] > trigger['macd_signal']
-        long_bb = trigger['close'] > trigger['bb_mid'] and trigger['close'] <= trigger['bb_upper']
         long_cross = prev['hma20'] <= prev['hma50'] and trigger['hma20'] > trigger['hma50']
 
-        if all([long_trend, long_volume, long_adx, long_rsi, long_macd, long_bb, long_cross]):
+        if all([long_trend, long_volume, long_adx, long_rsi, long_macd, long_cross]):
             return Signal(
                 symbol=symbol, side="long", strategy=self.NAME, order_type="limit",
                 entry_price=Decimal(str(trigger['close'])),
@@ -217,20 +215,18 @@ class AntigravityQuantumV13Pro:
         short_trend = (
             trigger['close'] < trigger['ema100'] and
             trigger['ema20'] < trigger['ema50'] and
-            all(df['ema20'].iloc[-2-i] < df['ema20'].iloc[-3-i] for i in range(3)) and
-            all(df['ema9'].iloc[-2-i] < df['ema9'].iloc[-3-i] for i in range(2))
+            df['ema20'].iloc[-2] < df['ema20'].iloc[-3] and
+            df['ema9'].iloc[-2] < df['ema9'].iloc[-3]
         )
         short_volume = (
-            trigger['volume'] > trigger['vol_sma20'] * 1.05 and
-            trigger['volume'] > trigger['vol_sma50'] * 0.85
+            trigger['volume'] > trigger['vol_sma20']
         )
-        short_adx = trigger['adx'] > 14 and trigger['minus_di'] > trigger['plus_di']
+        short_adx = trigger['adx'] > 12 and trigger['minus_di'] > trigger['plus_di']
         short_rsi = 20 < trigger['rsi'] < 70
         short_macd = trigger['macd'] < trigger['macd_signal']
-        short_bb = trigger['close'] < trigger['bb_mid'] and trigger['close'] >= trigger['bb_lower']
         short_cross = prev['hma20'] >= prev['hma50'] and trigger['hma20'] < trigger['hma50']
 
-        if all([short_trend, short_volume, short_adx, short_rsi, short_macd, short_bb, short_cross]):
+        if all([short_trend, short_volume, short_adx, short_rsi, short_macd, short_cross]):
             return Signal(
                 symbol=symbol, side="short", strategy=self.NAME, order_type="limit",
                 entry_price=Decimal(str(trigger['close'])),

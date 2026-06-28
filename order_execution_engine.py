@@ -182,9 +182,8 @@ class OrderExecutionEngine:
             except:
                 tick_sz = Decimal("0.0001")
 
-        sl_px = str(
-            (Decimal(str(new_sl)) / tick_sz).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * tick_sz
-        )
+        res = (Decimal(str(new_sl)) / tick_sz).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * tick_sz
+        sl_px = f"{res.normalize():f}"
 
         try:
             pending = await self.client._req(

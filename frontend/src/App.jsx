@@ -201,7 +201,7 @@ const App = () => {
                           </td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[3]}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[4]}</td>
-                          <td className={`py-3 px-4 text-right font-mono font-bold ${getPnlClass(trade[5])}`}>{trade[5]}</td>
+                          <td className={`py-3 px-4 text-right font-mono font-bold ${getPnlClass(trade[6])}`}>{trade[6]}</td>
                         </tr>
                       ))
                     ) : (

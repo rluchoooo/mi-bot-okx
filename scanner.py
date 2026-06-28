@@ -889,11 +889,11 @@ class QuantumBotRuntime:
             entry_price=float(entry), position_size=qty, remaining_size=qty,
             sl_price=float(sl_to_set), tp_price=float(tp_to_set) if tp_to_set else None,
             tp1_price=float(levels.get("tp1_price", 0) or 0), tp2_price=float(levels.get("tp2_price", 0) or 0),
-            profit_lock_price=float(be_price), profit_lock_sl=float(breakeven_sl(entry, side_str, atr_est)),
+            profit_lock_price=float(be_price),
             atr=float(atr_est), risk_usd=float(FIXED_RISK_USDT), leverage=int(pos.get("lever", 10)),
             status=trade_status, highest_price=float(max(entry, current_price)), lowest_price=float(min(entry, current_price)),
             profit_lock_active=profit_lock_active, trailing_active=trailing_active,
-            tp1_done=tp1_done
+            tp1_filled=tp1_done
         )
         db.add(trade)
         db.commit()
@@ -1220,7 +1220,7 @@ class QuantumBotRuntime:
                             strategy=Strategy.AUTO_ADOPTED,
                             status=TradeStatus.OPEN if not tp2_done else TradeStatus.TRAILING,
                             entry_price=entry,
-                            qty=qty,
+                            position_size=qty,
                             remaining_size=qty,
                             sl_price=final_sl,
                             tp_price=levels["tp_final"],

@@ -493,10 +493,75 @@ class QuantumBotRuntime:
             Base.metadata.create_all(engine)
             self.last_positions = {}
             self._log("🗑️ BASE DE DATOS Y ESTADÍSTICAS BORRADAS AL 100%.", "SYSTEM")
+            
+            # Sincronizar el historial después de limpiar la DB
+            await self._sync_history_from_exchange()
+            
         except Exception as e:
             self._log(f"Error al resetear la base de datos: {e}", "ERROR")
         
         return "Reseteo Completado. Puedes Iniciar el Bot de Nuevo."
+
+    async def _sync_history_from_exchange(self) -> None:
+        """Descarga el historial de posiciones cerradas de OKX y lo guarda en la DB."""
+        client = self._new_client()
+        try:
+            self._log("🔄 Sincronizando historial desde OKX...", "SYSTEM")
+            history = await client._req("GET", "/api/v5/account/positions-history?instType=SWAP&limit=100", auth=True)
+            if not history:
+                self._log("No se encontró historial en OKX.", "SYSTEM")
+                return
+                
+            from models import get_session, Trade, TradeSide, Strategy, TradeStatus
+            from datetime import datetime, timezone
+            
+            with get_session() as db:
+                for item in reversed(history):
+                    symbol = item.get("instId")
+                    direction = item.get("direction", "").lower()
+                    if direction == "long":
+                        side = TradeSide.LONG
+                    elif direction == "short":
+                        side = TradeSide.SHORT
+                    else:
+                        continue
+                        
+                    open_px = float(item.get("openAvgPx", 0))
+                    close_px = float(item.get("closeAvgPx", 0))
+                    pnl = float(item.get("realizedPnl", 0))
+                    size = float(item.get("closeTotalPos", 0))
+                    c_time = int(item.get("cTime", 0))
+                    u_time = int(item.get("uTime", 0))
+                    
+                    if open_px == 0: continue
+                    
+                    opened_at = datetime.fromtimestamp(c_time / 1000.0, timezone.utc)
+                    closed_at = datetime.fromtimestamp(u_time / 1000.0, timezone.utc)
+                    
+                    # Create closed trade
+                    trade = Trade(
+                        symbol=symbol,
+                        side=side,
+                        strategy=Strategy.AUTO_ADOPTED,
+                        status=TradeStatus.CLOSED,
+                        entry_price=open_px,
+                        position_size=size,
+                        remaining_size=0.0,
+                        sl_price=0.0,
+                        atr=0.0,
+                        close_price=close_px,
+                        realized_pnl=pnl,
+                        created_at=opened_at,
+                        closed_at=closed_at,
+                        close_reason="CLOSED_BY_OKX"
+                    )
+                    db.add(trade)
+                db.commit()
+            self._log(f"✅ Historial sincronizado con {len(history)} operaciones.", "SYSTEM")
+        except Exception as e:
+            self._log(f"Error sincronizando historial: {e}", "ERROR")
+        finally:
+            await client.close()
 
     async def _main(self) -> None:
         client = self._new_client()

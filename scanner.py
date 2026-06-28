@@ -118,19 +118,31 @@ class OKXClient:
         await self._req("POST", "/api/v5/account/set-leverage",
                         {"instId": inst_id, "lever": str(lever), "mgnMode": "isolated", "posSide": pos_side}, auth=True)
 
+def clean_num(val, precision=8) -> str:
+    if val is None or val == "":
+        return ""
+    if isinstance(val, float):
+        val = round(val, precision)
+    d = Decimal(str(val))
+    s = f"{d:f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
     async def place_limit_order(self, inst_id: str, side: str, qty: Decimal, price: Decimal, sl: Decimal = None, tp: Decimal = None) -> str:
         pos_side = "long" if side == "buy" else "short"
         payload = {
             "instId": inst_id, "tdMode": "isolated", "side": side,
-            "posSide": pos_side, "ordType": "limit", "sz": str(qty), "px": str(price),
+            "posSide": pos_side, "ordType": "limit", "sz": clean_num(qty), "px": clean_num(price),
         }
         if sl or tp:
             algo_ord = {}
             if sl:
-                algo_ord["slTriggerPx"] = str(sl)
+                algo_ord["slTriggerPx"] = clean_num(sl)
                 algo_ord["slOrdPx"] = "-1"
             if tp:
-                algo_ord["tpTriggerPx"] = str(tp)
+                algo_ord["tpTriggerPx"] = clean_num(tp)
                 algo_ord["tpOrdPx"] = "-1"
             payload["attachAlgoOrds"] = [algo_ord]
             
@@ -171,21 +183,21 @@ class OKXClient:
             "instId": inst_id,
             "tdMode": td_mode,
             "posSide": pos_side,
-            "sz": str(qty),
+            "sz": clean_num(qty),
         }
         if sl and tp:
             payload["ordType"] = "oco"
-            payload["slTriggerPx"] = str(sl)
+            payload["slTriggerPx"] = clean_num(sl)
             payload["slOrdPx"] = "-1"
-            payload["tpTriggerPx"] = str(tp)
+            payload["tpTriggerPx"] = clean_num(tp)
             payload["tpOrdPx"] = "-1"
         elif sl:
             payload["ordType"] = "conditional"
-            payload["slTriggerPx"] = str(sl)
+            payload["slTriggerPx"] = clean_num(sl)
             payload["slOrdPx"] = "-1"
         elif tp:
             payload["ordType"] = "conditional"
-            payload["tpTriggerPx"] = str(tp)
+            payload["tpTriggerPx"] = clean_num(tp)
             payload["tpOrdPx"] = "-1"
         else:
             return
@@ -196,15 +208,15 @@ class OKXClient:
         pos_side = "long" if side == "buy" else "short"
         payload = {
             "instId": inst_id, "tdMode": "isolated", "side": side,
-            "posSide": pos_side, "ordType": "market", "sz": str(qty),
+            "posSide": pos_side, "ordType": "market", "sz": clean_num(qty),
         }
         if sl or tp:
             algo_ord = {}
             if sl:
-                algo_ord["slTriggerPx"] = str(sl)
+                algo_ord["slTriggerPx"] = clean_num(sl)
                 algo_ord["slOrdPx"] = "-1"
             if tp:
-                algo_ord["tpTriggerPx"] = str(tp)
+                algo_ord["tpTriggerPx"] = clean_num(tp)
                 algo_ord["tpOrdPx"] = "-1"
             payload["attachAlgoOrds"] = [algo_ord]
             

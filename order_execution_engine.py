@@ -3,6 +3,18 @@ from decimal import Decimal
 from discord_notifier import discord_notifier
 
 
+def clean_num(val, precision=8) -> str:
+    if val is None or val == "":
+        return ""
+    if isinstance(val, float):
+        val = round(val, precision)
+    d = Decimal(str(val))
+    s = f"{d:f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
 class OrderExecutionEngine:
     def __init__(self, client):
         self.client = client
@@ -21,8 +33,8 @@ class OrderExecutionEngine:
                     "side": "buy" if side == "long" else "sell",
                     "posSide": side,
                     "ordType": "limit",
-                    "px": str(price),
-                    "sz": str(qty)
+                    "px": clean_num(price),
+                    "sz": clean_num(qty)
                 }
                 data = await self.client._req("POST", "/api/v5/trade/order", body=body, auth=True)
 
@@ -58,7 +70,7 @@ class OrderExecutionEngine:
                     "side": "sell" if side == "long" else "buy",
                     "posSide": side,
                     "ordType": "market",
-                    "sz": str(qty)
+                    "sz": clean_num(qty)
                 }
                 data = await self.client._req("POST", "/api/v5/trade/order", body=body, auth=True)
                 if data and len(data) > 0:

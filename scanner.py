@@ -47,6 +47,18 @@ def _is_disallowed(inst_id: str) -> bool:
     return inst_id.split("-")[0] in DISALLOWED_BASES
 
 
+def clean_num(val, precision=8) -> str:
+    if val is None or val == "":
+        return ""
+    if isinstance(val, float):
+        val = round(val, precision)
+    d = Decimal(str(val))
+    s = f"{d:f}"
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
 # ──────────────────────────────────────────────
 # OKX HTTP Client
 # ──────────────────────────────────────────────
@@ -117,18 +129,6 @@ class OKXClient:
     async def set_leverage(self, inst_id: str, lever: int, pos_side: str) -> None:
         await self._req("POST", "/api/v5/account/set-leverage",
                         {"instId": inst_id, "lever": str(lever), "mgnMode": "isolated", "posSide": pos_side}, auth=True)
-
-def clean_num(val, precision=8) -> str:
-    if val is None or val == "":
-        return ""
-    if isinstance(val, float):
-        val = round(val, precision)
-    d = Decimal(str(val))
-    s = f"{d:f}"
-    if "." in s:
-        s = s.rstrip("0").rstrip(".")
-    return s
-
 
     async def place_limit_order(self, inst_id: str, side: str, qty: Decimal, price: Decimal, sl: Decimal = None, tp: Decimal = None) -> str:
         pos_side = "long" if side == "buy" else "short"

@@ -22,10 +22,27 @@ class ExchangeSynchronizer:
                     entry = float(p.get("avgPx", 0))
                     qty = float(p.get("pos", 0))
                     
+                    # Check cerebro.json for strategy
+                    import json, os
+                    from models import Strategy
+                    strat_val = Strategy.ST_EMA_REGIME_MTF_PRO
+                    if os.path.exists("cerebro.json"):
+                        try:
+                            with open("cerebro.json", "r", encoding="utf-8") as f:
+                                cdata = json.load(f)
+                                saved = cdata.get(sym)
+                                if saved:
+                                    for s in Strategy:
+                                        if s.value == saved or s.name == saved:
+                                            strat_val = s
+                                            break
+                        except Exception:
+                            pass
+
                     t = Trade(
                         symbol=sym,
                         side=side,
-                        strategy="AUTO_ADOPTED",
+                        strategy=strat_val,
                         entry_price=entry,
                         position_size=qty,
                         remaining_size=qty,

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 const App = () => {
   const [data, setData] = useState({
-    status: 'OFFLINE',
+    status: '🔴 BOT DETENIDO',
     balance: '0.00 USDT',
     live_pnl: '+0.00 USDT',
     daily_pnl: '+0.00 USDT',
@@ -15,19 +15,19 @@ const App = () => {
 
   const logsEndRef = useRef(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await fetch('/api/dashboard');
-        if (response.ok) {
-          const json = await response.json();
-          setData(json);
-        }
-      } catch (error) {
-        console.error('Failed to fetch dashboard data', error);
+  const fetchData = async () => {
+    try {
+      const response = await fetch('/api/dashboard');
+      if (response.ok) {
+        const json = await response.json();
+        setData(json);
       }
-    };
+    } catch (error) {
+      console.error('Failed to fetch dashboard data', error);
+    }
+  };
 
+  useEffect(() => {
     fetchData(); // initial fetch
     const intervalId = setInterval(fetchData, 3000);
 
@@ -43,6 +43,7 @@ const App = () => {
   const handleAction = async (endpoint) => {
     try {
       await fetch(endpoint, { method: 'POST' });
+      await fetchData();
     } catch (error) {
       console.error(`Failed to execute ${endpoint}`, error);
     }
@@ -55,7 +56,34 @@ const App = () => {
     return 'text-slate-300';
   };
 
-  const isBotRunning = data.status.includes('RUNNING');
+  const getStatusInfo = (statusStr) => {
+    if (!statusStr) return { type: 'STOPPED', color: 'text-rose-400', dot: 'bg-rose-500 shadow-[0_0_10px_#f43f5e]' };
+    const str = statusStr.toUpperCase();
+    if (str.includes('CORRIENDO') || str.includes('RUNNING')) {
+      return { type: 'RUNNING', color: 'text-emerald-400', dot: 'bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse' };
+    }
+    if (str.includes('PROTECCIÓN') || str.includes('PROTECCION') || str.includes('PROTECTING') || str.includes('PAUSADO') || str.includes('SAFE STOP')) {
+      return { type: 'PROTECTION', color: 'text-amber-400', dot: 'bg-amber-400 shadow-[0_0_10px_#fbbf24] animate-pulse' };
+    }
+    return { type: 'STOPPED', color: 'text-rose-400', dot: 'bg-rose-500 shadow-[0_0_10px_#f43f5e]' };
+  };
+
+  const statusInfo = getStatusInfo(data.status);
+
+  const getTradeStatusBadge = (statusStr) => {
+    if (!statusStr || statusStr === '-') return null;
+    const str = statusStr.toUpperCase();
+    if (str.includes('CORRIENDO') || str.includes('OPEN') || str.includes('LIVE') || str.includes('RUNNING') || str.includes('ACTIVA')) {
+      return <span className="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">{statusStr}</span>;
+    }
+    if (str.includes('PROTECCIÓN') || str.includes('PROTECCION') || str.includes('TRAILING') || str.includes('BREAKEVEN') || str.includes('PAUSADO')) {
+      return <span className="px-2 py-0.5 rounded text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">{statusStr}</span>;
+    }
+    if (str.includes('DETENIDO') || str.includes('CLOSED') || str.includes('OFF') || str.includes('STOPPED')) {
+      return <span className="px-2 py-0.5 rounded text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">{statusStr}</span>;
+    }
+    return <span className="px-2 py-0.5 rounded text-xs font-bold bg-slate-700/50 text-slate-300 border border-slate-600/30">{statusStr}</span>;
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 p-6 relative overflow-hidden font-sans">
@@ -68,7 +96,7 @@ const App = () => {
         {/* Header section */}
         <header className="glass-panel p-6 flex flex-col md:flex-row justify-between items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse' : 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'}`}></div>
+            <div className={`w-3 h-3 rounded-full ${statusInfo.dot}`}></div>
             <h1 className="text-3xl font-black tracking-wider text-slate-100 uppercase">
               OKX Quantum Elite
             </h1>
@@ -77,19 +105,21 @@ const App = () => {
           <div className="flex items-center gap-3">
             <button 
               onClick={() => handleAction('/api/start')}
-              className="px-6 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 transition-all font-semibold"
+              disabled={statusInfo.type === 'RUNNING'}
+              className={`px-6 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/50 text-emerald-400 transition-all font-semibold ${statusInfo.type === 'RUNNING' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-emerald-500/20 cursor-pointer'}`}
             >
               Iniciar Bot
             </button>
             <button 
               onClick={() => handleAction('/api/stop')}
-              className="px-6 py-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/50 text-rose-400 transition-all font-semibold"
+              disabled={statusInfo.type === 'STOPPED'}
+              className={`px-6 py-2 rounded-lg bg-rose-500/10 border border-rose-500/50 text-rose-400 transition-all font-semibold ${statusInfo.type === 'STOPPED' ? 'opacity-50 cursor-not-allowed' : 'hover:bg-rose-500/20 cursor-pointer'}`}
             >
               Detener Bot
             </button>
             <button 
               onClick={() => handleAction('/api/reset')}
-              className="px-6 py-2 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 text-slate-300 transition-all font-semibold"
+              className="px-6 py-2 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 text-slate-300 transition-all font-semibold cursor-pointer"
             >
               Reiniciar Stats
             </button>
@@ -100,7 +130,7 @@ const App = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="glass-card">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">ESTADO</p>
-            <p className={`text-lg font-bold ${isBotRunning ? 'text-emerald-400' : 'text-slate-300'}`}>{data.status}</p>
+            <p className={`text-lg font-bold ${statusInfo.color}`}>{data.status}</p>
           </div>
           <div className="glass-card">
             <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">BALANCE</p>
@@ -141,11 +171,12 @@ const App = () => {
                       <th className="py-3 px-4 font-semibold">Lado</th>
                       <th className="py-3 px-4 font-semibold">Tamaño</th>
                       <th className="py-3 px-4 font-semibold">Objetivos</th>
+                      <th className="py-3 px-4 font-semibold">Estado</th>
                       <th className="py-3 px-4 font-semibold text-right">PNL</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.active_positions && data.active_positions.length > 0 ? (
+                    {data.active_positions && data.active_positions.length > 0 && data.active_positions[0][0] !== '-' ? (
                       data.active_positions.map((pos, idx) => (
                         <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                           <td className="py-3 px-4 font-medium text-slate-200">{pos[0]}</td>
@@ -157,12 +188,13 @@ const App = () => {
                           </td>
                           <td className="py-3 px-4 text-slate-300 font-mono text-sm">{pos[3]}</td>
                           <td className="py-3 px-4 text-slate-400 text-xs">{pos[4]}</td>
+                          <td className="py-3 px-4 text-xs">{getTradeStatusBadge(pos[6] || 'ACTIVA')}</td>
                           <td className={`py-3 px-4 text-right font-mono font-bold ${getPnlClass(pos[5])}`}>{pos[5]}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="6" className="py-8 text-center text-slate-500">Sin posiciones activas</td>
+                        <td colSpan="7" className="py-8 text-center text-slate-500">Sin posiciones activas</td>
                       </tr>
                     )}
                   </tbody>
@@ -181,8 +213,8 @@ const App = () => {
                   <thead>
                     <tr className="border-b border-slate-700/50 text-slate-400 text-sm">
                       <th className="py-3 px-4 font-semibold">Símbolo</th>
-                      <th className="py-3 px-4 font-semibold">Estrategia</th>
                       <th className="py-3 px-4 font-semibold">Lado</th>
+                      <th className="py-3 px-4 font-semibold">Estrategia</th>
                       <th className="py-3 px-4 font-semibold">Entrada</th>
                       <th className="py-3 px-4 font-semibold">Salida</th>
                       <th className="py-3 px-4 font-semibold">Motivo</th>
@@ -194,15 +226,15 @@ const App = () => {
                       data.closed_trades.map((trade, idx) => (
                         <tr key={idx} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition-colors">
                           <td className="py-3 px-4 font-medium text-slate-300">{trade[0]}</td>
-                          <td className="py-3 px-4 text-slate-400 text-sm">{trade[1]}</td>
                           <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${trade[2] === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : trade[2] === 'SHORT' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-700 text-slate-300'}`}>
-                              {trade[2]}
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${trade[1] === 'LONG' ? 'bg-emerald-500/10 text-emerald-400' : trade[1] === 'SHORT' ? 'bg-rose-500/10 text-rose-400' : 'bg-slate-700 text-slate-300'}`}>
+                              {trade[1]}
                             </span>
                           </td>
+                          <td className="py-3 px-4 text-slate-400 text-sm">{trade[2]}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[3]}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[4]}</td>
-                          <td className="py-3 px-4 text-slate-400 text-xs">{trade[5]}</td>
+                          <td className="py-3 px-4 text-slate-400 text-xs">{getTradeStatusBadge(trade[5])}</td>
                           <td className={`py-3 px-4 text-right font-mono font-bold ${getPnlClass(trade[6])}`}>{trade[6]}</td>
                         </tr>
                       ))

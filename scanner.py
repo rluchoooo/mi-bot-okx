@@ -47,6 +47,29 @@ from strategy import Signal, AntigravityQuantumV13Pro, SuperTrendEMARegimeMTFPro
 # Helpers
 # ──────────────────────────────────────────────
 
+def _get_strategy_from_cerebro(symbol: str) -> Strategy:
+    import json, os
+    cerebro_path = "cerebro.json"
+    if os.path.exists(cerebro_path):
+        try:
+            with open(cerebro_path, "r", encoding="utf-8") as f:
+                cerebro_data = json.load(f)
+                saved_strat = cerebro_data.get(symbol)
+                if not saved_strat and "-SWAP" in symbol:
+                    alt_sym = symbol.split("-")[0] + "-USDT-SWAP"
+                    saved_strat = cerebro_data.get(alt_sym)
+                if not saved_strat:
+                    clean_sym = symbol.replace("-USDT-SWAP", "")
+                    saved_strat = cerebro_data.get(clean_sym)
+                if saved_strat:
+                    for s in Strategy:
+                        if s.value == saved_strat or s.name == saved_strat:
+                            return s
+        except Exception:
+            pass
+    return Strategy.ST_EMA_REGIME_MTF_PRO
+
+
 def _is_disallowed(inst_id: str) -> bool:
     return inst_id.split("-")[0] in DISALLOWED_BASES
 
@@ -374,21 +397,17 @@ class QuantumBotRuntime:
     # ── Start / Stop ─────────────────────────────────────────────────
 
     def start(self) -> str:
-        if self.running:
-            if not self.scanning:
-                self.scanning = True
-                self._log("MOTOR ESCÁNER REANUDADO INMEDIATAMENTE.", "SYSTEM")
-            return "already_running"
+        self.running = True
+        self.scanning = True
+        self.opening_allowed = True
         
         # Ensure thread-safety globally (across hot-reloads)
         import threading
         for th in threading.enumerate():
             if th.name == "QuantumScannerThread" and th.is_alive():
-                self._log("⚠️ Hilo de escáner previo detectado. Evitando duplicación.", "WARN")
-                return "already_running"
+                self._log("MOTOR ESCÁNER REANUDADO INMEDIATAMENTE.", "SYSTEM")
+                return "started"
             
-        self.running = True
-        self.scanning = True
         self._thread = threading.Thread(target=self._run_main_sync, daemon=True, name="QuantumScannerThread")
         self._thread.start()
         self._log("MOTOR QUANTUM ENCENDIDO")
@@ -405,7 +424,9 @@ class QuantumBotRuntime:
 
     def stop(self) -> str:
         self.scanning = False
-        self._log("[SYSTEM] Escáner pausado. El Guardián seguirá vigilando las operaciones abiertas.", "WARN")
+        self.opening_allowed = False
+        self.running = False
+        self._log("🛑 Bot detenido por el usuario.", "WARN")
         return "stopped"
 
     async def _close_all_positions(self) -> None:
@@ -459,6 +480,7 @@ class QuantumBotRuntime:
     async def reset_database(self) -> str:
         # First fully kill everything so it unlocks DB
         self.scanning = False
+        self.opening_allowed = False
         self.running = False
         if hasattr(self, "ws_agent") and self.ws_agent:
             self.ws_agent.stop()
@@ -546,7 +568,7 @@ class QuantumBotRuntime:
                     trade = Trade(
                         symbol=symbol,
                         side=side,
-                        strategy=Strategy.AUTO_ADOPTED,
+                        strategy=_get_strategy_from_cerebro(symbol),
                         status=TradeStatus.CLOSED,
                         entry_price=open_px,
                         position_size=size,
@@ -703,7 +725,7 @@ class QuantumBotRuntime:
                     c_time_ms = float(r.get("cTime", u_time_ms))
                     opened_at_dt = datetime.utcfromtimestamp(c_time_ms / 1000)
                     db.add(Trade(
-                        symbol=inst_id, side=side, strategy=Strategy.AUTO_ADOPTED,
+                        symbol=inst_id, side=side, strategy=_get_strategy_from_cerebro(inst_id),
                         status=TradeStatus.CLOSED, position_closed=1, entry_price=entry, position_size=qty, remaining_size=0,
                         sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
                         tp_price=entry * (1.10 if side == TradeSide.LONG else 0.90),
@@ -809,24 +831,8 @@ class QuantumBotRuntime:
         side_str = "long" if side == TradeSide.LONG else "short"
         
         # 1. Asignar Estrategia recordando la operación (Cerebro)
-        strategy_val = Strategy.ST_EMA_REGIME_MTF_PRO
-        strat_name_log = "ST_EMA_REGIME_MTF_PRO"
-        
-        import json, os
-        cerebro_path = "cerebro.json"
-        if os.path.exists(cerebro_path):
-            try:
-                with open(cerebro_path, "r", encoding="utf-8") as f:
-                    cerebro_data = json.load(f)
-                    if iid in cerebro_data:
-                        saved_strat = cerebro_data[iid]
-                        for s in Strategy:
-                            if s.value == saved_strat:
-                                strategy_val = s
-                                strat_name_log = saved_strat
-                                break
-            except Exception:
-                pass
+        strategy_val = _get_strategy_from_cerebro(iid)
+        strat_name_log = strategy_val.value if hasattr(strategy_val, "value") else str(strategy_val)
 
         self._log(f"[{iid}] 🔍 Adopción Activa: {strat_name_log}", "SYSTEM")
 
@@ -839,7 +845,7 @@ class QuantumBotRuntime:
         tp_to_set = Decimal(str(tp_final)) if tp_final else None
         
         # Determine Breakeven and Trailing based on current price
-        be_dist = atr_est * 2.0
+        be_dist = atr_est * 1.8
         be_price = entry + Decimal(str(be_dist)) if side_str == "long" else entry - Decimal(str(be_dist))
         crossed_be  = (current_price >= be_price) if side_str == "long" else (current_price <= be_price)
 
@@ -868,7 +874,7 @@ class QuantumBotRuntime:
                     ema_valid = (ema21 < current_price) if side_str == "long" else (ema21 > current_price)
                     if ema_valid:
                         sl_to_set = max(sl_to_set, ema21) if side_str == "long" else min(sl_to_set, ema21)
-                        self._log(f"[{iid}] 🚀 Guardián detectó ganancia > 2.5 ATR. Trailing EMA21 calculado e inyectado en: {ema21:.6f}")
+                        self._log(f"[{iid}] 🚀 Guardián detectó ganancia > 2.5 ATR. Trailing EMA21 calculated e inyectado en: {ema21:.6f}")
             except Exception as e:
                 self._log(f"[{iid}] Error calculando EMA21 para adopción trailing: {e}", "WARN")
 
@@ -876,13 +882,13 @@ class QuantumBotRuntime:
             profit_lock_active = 1
             trade_status = TradeStatus.BREAKEVEN
             from config import LEVERAGE
-            # ROE 15% means: 15 / LEVERAGE = price movement %
-            price_movement_pct = Decimal("15.0") / Decimal(str(LEVERAGE)) / Decimal("100")
+            # ROE 12% means: 12 / LEVERAGE = price movement %
+            price_movement_pct = Decimal("12.0") / Decimal(str(LEVERAGE)) / Decimal("100")
             if side_str == "long":
                 sl_to_set = max(sl_to_set, entry + (entry * price_movement_pct))
             else:
                 sl_to_set = min(sl_to_set, entry - (entry * price_movement_pct))
-            self._log(f"[{iid}] 🛡️ Guardián detectó ganancia > 2.0 ATR. Breakeven 15% ROE calculado e inyectado en: {sl_to_set:.6f}")
+            self._log(f"[{iid}] 🛡️ Guardián detectó ganancia > 1.8 ATR. Breakeven 12% ROE calculado e inyectado en: {sl_to_set:.6f}")
 
         # Verify it hasn't been added yet concurrently
         already_open = db.query(Trade).filter(
@@ -909,6 +915,7 @@ class QuantumBotRuntime:
         db.add(trade)
         db.commit()
         
+        self._log(f"🚀 [POSICIÓN ACTIVA] {iid} {side_str.upper()} ({strat_name_log}) | Entrada: {float(entry):.6f} | SL: {float(sl_to_set):.6f} | Breakeven: {float(be_price):.6f} (@1.8 ATR / +12% ROE) | Trailing: {float(trail_price):.6f} (@2.5 ATR / EMA21)")
         self._log(f"[{iid}] Adoptando dinámicamente como {strat_name_log}. Enviando protecciones nativas a OKX...")
         
         try:
@@ -1232,7 +1239,7 @@ class QuantumBotRuntime:
                         t = Trade(
                             symbol=sym,
                             side=side,
-                            strategy=Strategy.AUTO_ADOPTED,
+                            strategy=_get_strategy_from_cerebro(sym),
                             status=TradeStatus.OPEN if not tp2_done else TradeStatus.TRAILING,
                             entry_price=entry,
                             position_size=qty,
@@ -1253,6 +1260,12 @@ class QuantumBotRuntime:
                         )
                         db.add(t)
                         db.flush()
+                        
+                        strat_obj = _get_strategy_from_cerebro(sym)
+                        strat_str = strat_obj.value if hasattr(strat_obj, "value") else str(strat_obj)
+                        side_str_log = side.value.upper() if hasattr(side, "value") else str(side).upper()
+                        trail_price_log = entry + (2.5 * atr_est) if side == TradeSide.LONG else entry - (2.5 * atr_est)
+                        self._log(f"🚀 [POSICIÓN ACTIVA] {sym} {side_str_log} ({strat_str}) | Entrada: {entry:.6f} | SL: {final_sl:.6f} | Breakeven: {be_price_threshold:.6f} (@1.8 ATR / +12% ROE) | Trailing: {trail_price_log:.6f} (@2.5 ATR / EMA21)")
                         
                         log_msg = f"[{sym}] 🤖 GUARDIÁN ADOPTA: SL={final_sl:.6f} TP1={levels['tp1_price']:.6f} TP2={levels['tp2_price']:.6f}"
                         if tp1_done: log_msg += " [TP1✅]"
@@ -1580,6 +1593,15 @@ class QuantumBotRuntime:
                             )
                             
                             await discord_notifier.log_entry(data["symbol"], data["side"], data["entry_price"], data["atr"])
+                            
+                            strat_obj_p = data["strategy"]
+                            strat_str_p = strat_obj_p.value if hasattr(strat_obj_p, "value") else str(strat_obj_p)
+                            side_str_p = data["side"].upper()
+                            entry_val_p = float(data["entry_price"])
+                            sl_val_p = float(levels["sl_price"])
+                            be_val_p = float(levels["profit_lock_trigger"])
+                            trail_val_p = float(entry_val_p + (2.5 * data["atr"]) if data["side"] == "long" else entry_val_p - (2.5 * data["atr"]))
+                            self._log(f"🚀 [POSICIÓN ACTIVA] {data['symbol']} {side_str_p} ({strat_str_p}) | Entrada: {entry_val_p:.6f} | SL: {sl_val_p:.6f} | Breakeven: {be_val_p:.6f} (@1.8 ATR / +12% ROE) | Trailing: {trail_val_p:.6f} (@2.5 ATR / EMA21)")
                             self._log(f"[{data['symbol']}] ✅ Orden Límite FILLED. Trade guardado y TPs/SL colocados.", "SYSTEM")
                             
                             self._pending_entries.pop(ord_id, None)
@@ -2076,18 +2098,22 @@ class QuantumBotRuntime:
     def get_open_trades(self) -> list[Trade]:
         try:
             with get_session() as db:
-                return db.query(Trade).filter(
+                res = db.query(Trade).filter(
                     Trade.position_closed == 0
                 ).all()
+                db.expunge_all()
+                return res
         except Exception:
             return []
 
     def get_closed_trades(self, n: int = 10) -> list[Trade]:
         try:
             with get_session() as db:
-                return db.query(Trade).filter(
-                    Trade.position_closed == 1
-                ).order_by(Trade.closed_at.desc()).limit(n).all()
+                res = db.query(Trade).filter(
+                    (Trade.position_closed == 1) | (Trade.status == TradeStatus.CLOSED)
+                ).order_by(Trade.closed_at.desc(), Trade.id.desc()).limit(n).all()
+                db.expunge_all()
+                return res
         except Exception:
             return []
 
@@ -2102,7 +2128,10 @@ class QuantumBotRuntime:
                 cutoff_utc -= timedelta(days=1)
                 
             with get_session() as db:
-                closed = db.query(Trade).filter(Trade.realized_pnl.isnot(None)).all()
+                closed = db.query(Trade).filter(
+                    ((Trade.position_closed == 1) | (Trade.status == TradeStatus.CLOSED)) &
+                    Trade.realized_pnl.isnot(None)
+                ).all()
                 closed_today = [t for t in closed if t.closed_at and t.closed_at >= cutoff_utc]
             total     = len(closed)
             wins      = [t for t in closed if (t.realized_pnl or 0) > 0]
@@ -2121,7 +2150,7 @@ class QuantumBotRuntime:
                 "wins_count":     len(wins),
                 "losses_count":   len(losses),
                 "win_rate":       (len(wins) / total * 100) if total else 0,
-                "profit_factor":  (gw / gl) if gl > 0 else 0,
+                "profit_factor":  (gw / gl) if gl > 0 else (gw if gw > 0 else 0),
                 "avg_win":        avg_win,
                 "avg_loss":       avg_loss,
                 "total_pnl":      total_pnl,

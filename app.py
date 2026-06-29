@@ -174,10 +174,12 @@ async def get_dashboard_data():
         closed_data = [["-", "-", "-", "-", "-", "-", "-"]]
 
     logs_text = "\\n".join(f"[QUANTUM] {l}" for l in reversed(logs)) if logs else "[SYSTEM] Terminal ready. Awaiting signals..."
-    if runtime.running:
-        status_str = "🟢 BOT RUNNING" if getattr(runtime, 'opening_allowed', False) else "🟡 SAFE STOP (Protecting)"
+    if runtime.running and getattr(runtime, 'scanning', False):
+        status_str = "🟢 BOT CORRIENDO"
+    elif runtime.running or getattr(runtime, 'scanning', False):
+        status_str = "🟡 MODO PROTECCIÓN (Pausado)"
     else:
-        status_str = "🔴 OFF"
+        status_str = "🔴 BOT DETENIDO"
     
     # We fetch balance from runtime if it exists, otherwise 0
     bal = getattr(runtime, "current_exchange_balance", 0.0)

@@ -191,13 +191,14 @@ class AntigravityQuantumV13Pro:
         long_trend = (
             trigger['close'] > trigger['ema100'] and
             trigger['ema20'] > trigger['ema50'] and
-            df['ema20'].iloc[-2] > df['ema20'].iloc[-3] and  # EMA20 subiendo 1 vela
-            df['ema9'].iloc[-2] > df['ema9'].iloc[-3]        # EMA9 subiendo 1 vela
+            df['ema20'].iloc[-2] > df['ema20'].iloc[-3] > df['ema20'].iloc[-4] > df['ema20'].iloc[-5] and
+            df['ema9'].iloc[-2] > df['ema9'].iloc[-3]
         )
         long_volume = (
-            trigger['volume'] > trigger['vol_sma20']
+            trigger['volume'] > (trigger['vol_sma20'] * 1.05) and
+            trigger['volume'] > (trigger['vol_sma50'] * 0.85)
         )
-        long_adx = trigger['adx'] > 12 and trigger['plus_di'] > trigger['minus_di']
+        long_adx = trigger['adx'] > 14 and trigger['plus_di'] > trigger['minus_di']
         long_rsi = 30 < trigger['rsi'] < 80
         long_macd = trigger['macd'] > trigger['macd_signal']
         long_cross = prev['hma20'] <= prev['hma50'] and trigger['hma20'] > trigger['hma50']
@@ -215,13 +216,14 @@ class AntigravityQuantumV13Pro:
         short_trend = (
             trigger['close'] < trigger['ema100'] and
             trigger['ema20'] < trigger['ema50'] and
-            df['ema20'].iloc[-2] < df['ema20'].iloc[-3] and
+            df['ema20'].iloc[-2] < df['ema20'].iloc[-3] < df['ema20'].iloc[-4] < df['ema20'].iloc[-5] and
             df['ema9'].iloc[-2] < df['ema9'].iloc[-3]
         )
         short_volume = (
-            trigger['volume'] > trigger['vol_sma20']
+            trigger['volume'] > (trigger['vol_sma20'] * 1.05) and
+            trigger['volume'] > (trigger['vol_sma50'] * 0.85)
         )
-        short_adx = trigger['adx'] > 12 and trigger['minus_di'] > trigger['plus_di']
+        short_adx = trigger['adx'] > 14 and trigger['minus_di'] > trigger['plus_di']
         short_rsi = 20 < trigger['rsi'] < 70
         short_macd = trigger['macd'] < trigger['macd_signal']
         short_cross = prev['hma20'] >= prev['hma50'] and trigger['hma20'] < trigger['hma50']
@@ -266,8 +268,8 @@ class SuperTrendEMARegimeMTFPro:
         trigger = df_15m.iloc[-2]
         trigger_1h = df_1h.iloc[-2]
         
-        # 3. Detectar armado de setup (Regímenes) en ventana de 160 velas
-        window_start = max(0, len(df_15m) - 160 - 2)
+        # 3. Detectar armado de setup (Regímenes) en ventana de 40 velas
+        window_start = max(0, len(df_15m) - 40 - 2)
         window = df_15m.iloc[window_start:-2]
         
         long_armed = False
@@ -340,7 +342,7 @@ class SuperTrendEMARegimeMTFPro:
         
         trigger = df_15m.iloc[-2]
         
-        window_start = max(0, len(df_15m) - 160 - 2)
+        window_start = max(0, len(df_15m) - 40 - 2)
         window = df_15m.iloc[window_start:-2]
         
         if side == "long":

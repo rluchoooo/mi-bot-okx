@@ -47,7 +47,7 @@ def compute_qty(
 ) -> Decimal:
     """
     Calcula el número de contratos garantizando un tamaño nominal fijo:
-    Margen de $15 USD * Apalancamiento 10x = $150 USDT Nominales.
+    Margen de $12 USD * Apalancamiento 10x = $120 USDT Nominales.
     """
     if ct_val == 0 or entry == 0:
         return Decimal("0")

@@ -268,8 +268,8 @@ class SuperTrendEMARegimeMTFPro:
         trigger = df_15m.iloc[-2]
         trigger_1h = df_1h.iloc[-2]
         
-        # 3. Detectar armado de setup (Regímenes) en ventana de 40 velas
-        window_start = max(0, len(df_15m) - 40 - 2)
+        # 3. Detectar armado de setup (Regímenes) en ventana de 25 velas
+        window_start = max(0, len(df_15m) - 25 - 2)
         window = df_15m.iloc[window_start:-2]
         
         long_armed = False
@@ -342,7 +342,7 @@ class SuperTrendEMARegimeMTFPro:
         
         trigger = df_15m.iloc[-2]
         
-        window_start = max(0, len(df_15m) - 40 - 2)
+        window_start = max(0, len(df_15m) - 25 - 2)
         window = df_15m.iloc[window_start:-2]
         
         if side == "long":

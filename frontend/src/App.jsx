@@ -70,7 +70,7 @@ const App = () => {
           <div className="flex items-center gap-4">
             <div className={`w-3 h-3 rounded-full ${isBotRunning ? 'bg-emerald-400 shadow-[0_0_10px_#34d399] animate-pulse' : 'bg-rose-500 shadow-[0_0_10px_#f43f5e]'}`}></div>
             <h1 className="text-3xl font-black tracking-wider text-slate-100 uppercase">
-              OKX
+              OKX Quantum Elite
             </h1>
           </div>
           
@@ -91,7 +91,7 @@ const App = () => {
               onClick={() => handleAction('/api/reset')}
               className="px-6 py-2 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 border border-slate-600 text-slate-300 transition-all font-semibold"
             >
-              Reiniciar Estadísticas
+              Reiniciar Stats
             </button>
           </div>
         </header>
@@ -99,23 +99,23 @@ const App = () => {
         {/* Top Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="glass-card">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Estado</p>
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">ESTADO</p>
             <p className={`text-lg font-bold ${isBotRunning ? 'text-emerald-400' : 'text-slate-300'}`}>{data.status}</p>
           </div>
           <div className="glass-card">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Balance</p>
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">BALANCE</p>
             <p className="text-xl font-bold text-slate-100">{data.balance}</p>
           </div>
           <div className="glass-card">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">PNL en Vivo</p>
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">PNL EN VIVO</p>
             <p className={`text-xl font-bold ${getPnlClass(data.live_pnl)}`}>{data.live_pnl}</p>
           </div>
           <div className="glass-card">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">PNL Diario</p>
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">PNL DIARIO</p>
             <p className={`text-xl font-bold ${getPnlClass(data.daily_pnl)}`}>{data.daily_pnl}</p>
           </div>
           <div className="glass-card">
-            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">Tasa de Acierto</p>
+            <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-1">TASA DE ACIERTO</p>
             <p className="text-xl font-bold text-blue-400">{data.win_rate} / {data.profit_factor} PF</p>
           </div>
         </div>
@@ -136,9 +136,9 @@ const App = () => {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-700/50 text-slate-400 text-sm">
-                      <th className="py-3 px-4 font-semibold">Moneda</th>
+                      <th className="py-3 px-4 font-semibold">Símbolo</th>
                       <th className="py-3 px-4 font-semibold">Estrategia</th>
-                      <th className="py-3 px-4 font-semibold">Dirección</th>
+                      <th className="py-3 px-4 font-semibold">Lado</th>
                       <th className="py-3 px-4 font-semibold">Tamaño</th>
                       <th className="py-3 px-4 font-semibold">Objetivos</th>
                       <th className="py-3 px-4 font-semibold text-right">PNL</th>
@@ -174,17 +174,18 @@ const App = () => {
             <div className="glass-panel p-6">
               <h2 className="text-lg font-bold text-slate-100 mb-4 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-slate-500"></span>
-                Últimos Trades
+                Operaciones Recientes
               </h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="border-b border-slate-700/50 text-slate-400 text-sm">
-                      <th className="py-3 px-4 font-semibold">Moneda</th>
+                      <th className="py-3 px-4 font-semibold">Símbolo</th>
                       <th className="py-3 px-4 font-semibold">Estrategia</th>
-                      <th className="py-3 px-4 font-semibold">Dirección</th>
+                      <th className="py-3 px-4 font-semibold">Lado</th>
                       <th className="py-3 px-4 font-semibold">Entrada</th>
                       <th className="py-3 px-4 font-semibold">Salida</th>
+                      <th className="py-3 px-4 font-semibold">Motivo</th>
                       <th className="py-3 px-4 font-semibold text-right">PNL</th>
                     </tr>
                   </thead>
@@ -201,12 +202,13 @@ const App = () => {
                           </td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[3]}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono text-sm">{trade[4]}</td>
+                          <td className="py-3 px-4 text-slate-400 text-xs">{trade[5]}</td>
                           <td className={`py-3 px-4 text-right font-mono font-bold ${getPnlClass(trade[6])}`}>{trade[6]}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan="6" className="py-8 text-center text-slate-500">Sin trades recientes</td>
+                        <td colSpan="7" className="py-8 text-center text-slate-500">Sin operaciones recientes</td>
                       </tr>
                     )}
                   </tbody>

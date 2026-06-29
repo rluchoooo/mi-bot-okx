@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from models import get_session, Trade, TradeStatus
 
@@ -14,13 +15,21 @@ class TradeStateRepository:
         with get_session() as db:
             t = db.query(Trade).filter(Trade.id == trade_id).first()
             if t:
+                # Synchronize closing status and attributes
+                if kwargs.get("position_closed") == 1 or kwargs.get("status") == TradeStatus.CLOSED or kwargs.get("status") == "CLOSED":
+                    kwargs["position_closed"] = 1
+                    kwargs["status"] = TradeStatus.CLOSED
+                    kwargs["remaining_size"] = 0.0
+                    if not kwargs.get("closed_at") and not t.closed_at:
+                        kwargs["closed_at"] = datetime.now(timezone.utc)
+
                 for k, v in kwargs.items():
                     setattr(t, k, v)
                 db.commit()
                 db.refresh(t)
                 
                 # Check if it was closed to log it
-                if "position_closed" in kwargs and kwargs["position_closed"] == 1:
+                if kwargs.get("position_closed") == 1:
                     try:
                         from csv_logger import log_trade_to_csv
                         log_trade_to_csv(t)
@@ -43,7 +52,7 @@ class TradeStateRepository:
                         cerebro_data = json.load(f)
                 except Exception:
                     pass
-            cerebro_data[trade.symbol] = trade.strategy
+            cerebro_data[trade.symbol] = trade.strategy.value if hasattr(trade.strategy, "value") else str(trade.strategy)
             try:
                 with open(cerebro_path, "w", encoding="utf-8") as f:
                     json.dump(cerebro_data, f)
@@ -59,3 +68,4 @@ class TradeStateRepository:
             return trade
 
 trade_state_repo = TradeStateRepository()
+

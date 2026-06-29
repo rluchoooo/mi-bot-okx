@@ -16,7 +16,11 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_DOWN, Decimal
 from typing import Any, Optional
 
+import logging
 import httpx
+
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 from config import (
     COOLDOWN_MINUTES, DAILY_LOSS_LIMIT_USDT, DISALLOWED_BASES,
@@ -700,13 +704,13 @@ class QuantumBotRuntime:
                     opened_at_dt = datetime.utcfromtimestamp(c_time_ms / 1000)
                     db.add(Trade(
                         symbol=inst_id, side=side, strategy=Strategy.AUTO_ADOPTED,
-                        status=TradeStatus.CLOSED, entry_price=entry, position_size=qty, remaining_size=0,
+                        status=TradeStatus.CLOSED, position_closed=1, entry_price=entry, position_size=qty, remaining_size=0,
                         sl_price=entry * (0.95 if side == TradeSide.LONG else 1.05),
                         tp_price=entry * (1.10 if side == TradeSide.LONG else 0.90),
                         atr=entry * 0.015, leverage=int(float(r.get("lever", 10))),
                         realized_pnl=real_pnl, close_price=exit_px, close_reason=reason,
                         opened_at=opened_at_dt, closed_at=closed_at_dt,
-                        risk_usd=float(FIXED_RISK_USDT), peak_price=entry
+                        risk_usd=float(FIXED_RISK_USDT), highest_price=entry, lowest_price=entry
                     ))
                     
                     # Descansar la moneda por 1 hora si fue pérdida (Stop Loss)
@@ -935,6 +939,8 @@ class QuantumBotRuntime:
                     if t.symbol not in okx_inst_ids:
                         self._log(f"[{t.symbol}] 🤖 AUDITOR: Posición no encontrada en OKX. Marcando como CERRADA.", "SYSTEM")
                         t.status = TradeStatus.CLOSED
+                        t.position_closed = 1
+                        t.remaining_size = 0.0
                         t.closed_at = datetime.utcnow()
                         
                         # Try to fetch actual PNL from OKX
@@ -1137,6 +1143,8 @@ class QuantumBotRuntime:
                                 try:
                                     await client.close_position(t.symbol, t.side)
                                     t.status = TradeStatus.CLOSED
+                                    t.position_closed = 1
+                                    t.remaining_size = 0.0
                                     t.close_reason = "MACRO_SHOCK_CUT"
                                     t.closed_at = datetime.utcnow()
                                     # Aplicar Cooldown de 30m
@@ -1686,6 +1694,8 @@ class QuantumBotRuntime:
                                     self._log(f"[{t.symbol}] 🔄 Cierre nativo detectado en OKX: Entrada={real_entry} | Salida={real_exit} | PnL={real_pnl} USDT | Razón={close_reason}")
                                     
                                     t.status = TradeStatus.CLOSED
+                                    t.position_closed = 1
+                                    t.remaining_size = 0.0
                                     t.entry_price = real_entry
                                     t.close_price = real_exit
                                     t.realized_pnl = real_pnl
@@ -1939,6 +1949,8 @@ class QuantumBotRuntime:
                             await client.close_position(symbol, side)
                             await client.cancel_algo_orders(symbol, "long" if side == "long" else "short")
                             trade.status = TradeStatus.CLOSED
+                            trade.position_closed = 1
+                            trade.remaining_size = 0.0
                             if decision.reason == "TP1_HIT":
                                 trade.tp1_filled = 1
                             elif decision.reason == "TP2_HIT":
@@ -2020,6 +2032,8 @@ class QuantumBotRuntime:
                             self._log(f"[{symbol}] No se pudo sincronizar PnL de historial: {hist_err}", "WARN")
 
                         trade.status       = TradeStatus.CLOSED
+                        trade.position_closed = 1
+                        trade.remaining_size = 0.0
                         trade.close_price  = real_exit
                         trade.close_reason = decision.reason
                         trade.realized_pnl = real_pnl

@@ -553,9 +553,16 @@ class QuantumBotRuntime:
                         realized_pnl=pnl,
                         created_at=opened_at,
                         closed_at=closed_at,
-                        close_reason="CLOSED_BY_OKX"
+                        close_reason="CLOSED_BY_OKX",
+                        position_closed=1
                     )
                     db.add(trade)
+                    # Log to CSV internally
+                    try:
+                        from csv_logger import log_trade_to_csv
+                        log_trade_to_csv(trade)
+                    except Exception as e:
+                        pass
                 db.commit()
             self._log(f"✅ Historial sincronizado con {len(history)} operaciones.", "SYSTEM")
         except Exception as e:
@@ -720,7 +727,7 @@ class QuantumBotRuntime:
         await self._sync_positions_history(client)
         with get_session() as db:
             open_trades = db.query(Trade).filter(
-                Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+                Trade.position_closed == 0
             ).count()
         if open_trades:
             self._log(f"[SYNC] {open_trades} operaciones restauradas desde SQLite.")
@@ -760,7 +767,7 @@ class QuantumBotRuntime:
                     already_open = db.query(Trade).filter(
                         Trade.symbol == iid,
                         Trade.side == TradeSide(side),
-                        Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+                        Trade.position_closed == 0
                     ).first()
                     if already_open:
                         continue
@@ -877,7 +884,7 @@ class QuantumBotRuntime:
         already_open = db.query(Trade).filter(
             Trade.symbol == iid,
             Trade.side == side,
-            Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+            Trade.position_closed == 0
         ).first()
         
         if already_open:
@@ -923,7 +930,7 @@ class QuantumBotRuntime:
             with get_session() as db:
                 # 0. Sync closed trades
                 okx_inst_ids = [p.get("instId") for p in positions]
-                open_db_trades = db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).all()
+                open_db_trades = db.query(Trade).filter(Trade.position_closed == 0).all()
                 for t in open_db_trades:
                     if t.symbol not in okx_inst_ids:
                         self._log(f"[{t.symbol}] 🤖 AUDITOR: Posición no encontrada en OKX. Marcando como CERRADA.", "SYSTEM")
@@ -974,7 +981,7 @@ class QuantumBotRuntime:
 
                     # 1. Adopt orphans (filtering by symbol AND side to prevent cross-side collision)
                     trade = db.query(Trade).filter(
-                        Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT]),
+                        Trade.position_closed == 0,
                         Trade.symbol == inst_id,
                         Trade.side == side
                     ).first()
@@ -1123,7 +1130,7 @@ class QuantumBotRuntime:
                     
                     # Kill Switch
                     with get_session() as db:
-                        open_trades = db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).all()
+                        open_trades = db.query(Trade).filter(Trade.position_closed == 0).all()
                         for t in open_trades:
                             if (shock_dir == "bullish" and t.side == "short") or (shock_dir == "bearish" and t.side == "long"):
                                 self._log(f"[{t.symbol}] ⚡ KILL SWITCH: Cerrando {t.side.upper()} en contra del shock {shock_dir.upper()}.", "WARN")
@@ -1157,8 +1164,8 @@ class QuantumBotRuntime:
 
         # Open position count
         with get_session() as db:
-            open_cnt    = db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).count()
-            active_syms = {t.symbol for t in db.query(Trade).filter(Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).all()}
+            open_cnt    = db.query(Trade).filter(Trade.position_closed == 0).count()
+            active_syms = {t.symbol for t in db.query(Trade).filter(Trade.position_closed == 0).all()}
             cdwn_syms   = {c.symbol for c in db.query(Cooldown).all() if c.is_active}
 
         # ALWAYS check real OKX positions and Auto-Adopt orphaned trades
@@ -1170,7 +1177,7 @@ class QuantumBotRuntime:
                     active_syms.add(sym)
                     
                     # Auto-Adopt Orphaned Trades
-                    existing = db.query(Trade).filter(Trade.symbol == sym, Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])).first()
+                    existing = db.query(Trade).filter(Trade.symbol == sym, Trade.position_closed == 0).first()
                     if not existing:
                         pos_side = p.get("posSide", "").lower()
                         qty_raw = float(p.get("pos", 0))
@@ -1342,7 +1349,7 @@ class QuantumBotRuntime:
                     if sig.strategy == "ST_EMA_REGIME_MTF_PRO":
                         t = db.query(Trade).filter(
                             Trade.symbol == sig.symbol, 
-                            Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+                            Trade.position_closed == 0
                         ).first()
                         if t and getattr(t.strategy, "value", str(t.strategy)) == sig.strategy:
                             side_str = t.side.value if hasattr(t.side, "value") else str(t.side)
@@ -1612,7 +1619,7 @@ class QuantumBotRuntime:
 
         with get_session() as db:
             open_trades = db.query(Trade).filter(
-                Trade.status.notin_([TradeStatus.CLOSED, TradeStatus.EARLY_EXIT])
+                Trade.position_closed == 0
             ).all()
             if not open_trades:
                 return

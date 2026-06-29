@@ -17,6 +17,15 @@ class TradeStateRepository:
                 for k, v in kwargs.items():
                     setattr(t, k, v)
                 db.commit()
+                db.refresh(t)
+                
+                # Check if it was closed to log it
+                if "position_closed" in kwargs and kwargs["position_closed"] == 1:
+                    try:
+                        from csv_logger import log_trade_to_csv
+                        log_trade_to_csv(t)
+                    except Exception:
+                        pass
 
     def save_new_trade(self, trade: Trade):
         with get_session() as db:
@@ -38,6 +47,12 @@ class TradeStateRepository:
             try:
                 with open(cerebro_path, "w", encoding="utf-8") as f:
                     json.dump(cerebro_data, f)
+            except Exception:
+                pass
+                
+            try:
+                from csv_logger import log_trade_to_csv
+                log_trade_to_csv(trade)
             except Exception:
                 pass
                 

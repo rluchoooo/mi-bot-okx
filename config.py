@@ -6,7 +6,7 @@ import os
 from decimal import Decimal
 
 # ── RIESGO ────────────────────────────────────────────────────────────
-FIXED_RISK_USDT       = Decimal("15.0")
+FIXED_RISK_USDT       = Decimal("12.0")
 LEVERAGE              = 10
 MAX_CONCURRENT_TRADES = 5
 SAME_SYMBOL_ONLY      = False

@@ -1724,6 +1724,27 @@ class QuantumBotRuntime:
 
             if int(time.time()) % 120 < RECONCILE_INTERVAL:
                 self._log(f"[AGENTE SUPERVISOR] Vigilando {len(active_snapshots)} posiciones activas. Comprobando latencias y métricas de Breakeven/Trailing...", "SYSTEM")
+                for t in active_snapshots:
+                    sym_clean = t.symbol.replace("-USDT-SWAP", "USDT")
+                    side_str = "LONG" if (getattr(t.side, "value", str(t.side)) == "long") else "SHORT"
+                    strat_name = getattr(t.strategy, "name", str(t.strategy))
+                    if strat_name == "ST_EMA_REGIME_MTF_PRO":
+                        strat_name = "SUPERTREND"
+                    
+                    sl = getattr(t, "sl_price", 0.0)
+                    be_active = "ON" if getattr(t, "profit_lock_active", 0) else "OFF"
+                    be_price = getattr(t, "profit_lock_price", 0.0) or 0.0
+                    tr_active = "ON" if getattr(t, "trailing_active", 0) else "OFF"
+                    
+                    etr = getattr(t, "entry_price", 0.0)
+                    atr = getattr(t, "atr", 0.0)
+                    if side_str == "LONG":
+                        trail_price = etr + (atr * 2.0)
+                    else:
+                        trail_price = etr - (atr * 2.0)
+                        
+                    self._log(f"🦸‍♂️ [SUPER SUPERVISOR] {sym_clean} {side_str} ({strat_name}) | ENTRADA ACTIVA | SL:{sl:.4f} | BREAKEVEN:{be_active} (@{be_price:.4f}) | TRAILING:{tr_active} (@{trail_price:.4f})", "SYSTEM")
+
 
             trade_snapshots = [
                 {

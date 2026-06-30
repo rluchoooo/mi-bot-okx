@@ -397,17 +397,21 @@ class QuantumBotRuntime:
     # ── Start / Stop ─────────────────────────────────────────────────
 
     def start(self) -> str:
+        import threading
+        thread_alive = False
+        for th in threading.enumerate():
+            if th.name == "QuantumScannerThread" and th.is_alive():
+                thread_alive = True
+                break
+        
+        if self.running and thread_alive:
+            self._log("MOTOR ESCÁNER YA SE ENCUENTRA CORRIENDO.", "SYSTEM")
+            return "started"
+            
         self.running = True
         self.scanning = True
         self.opening_allowed = True
         
-        # Ensure thread-safety globally (across hot-reloads)
-        import threading
-        for th in threading.enumerate():
-            if th.name == "QuantumScannerThread" and th.is_alive():
-                self._log("MOTOR ESCÁNER REANUDADO INMEDIATAMENTE.", "SYSTEM")
-                return "started"
-            
         self._thread = threading.Thread(target=self._run_main_sync, daemon=True, name="QuantumScannerThread")
         self._thread.start()
         self._log("MOTOR QUANTUM ENCENDIDO")

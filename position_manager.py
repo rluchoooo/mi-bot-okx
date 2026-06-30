@@ -43,8 +43,10 @@ class PositionManager:
             if not current_price:
                 continue
 
+            side_str = "long" if (t.side.value if hasattr(t.side, "value") else str(t.side)).lower() in ("long", "tradeside.long") else "short"
+
             # Update highest/lowest
-            if t.side == "long":
+            if side_str == "long":
                 highest = max(t.highest_price or current_price, current_price)
                 if highest != t.highest_price:
                     trade_state_repo.update_trade(t.id, highest_price=highest)
@@ -60,8 +62,10 @@ class PositionManager:
                     self._apply_cooldown(t.symbol)
                 continue
 
-            is_mtf = t.strategy in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED")
-            is_ag = t.strategy == "ANTIGRAVITY_V13_PRO"
+            strat_str = t.strategy.value if hasattr(t.strategy, "value") else str(t.strategy)
+            strat_str = strat_str.replace("Strategy.", "")
+            is_mtf = strat_str in ("ST_EMA_REGIME_MTF_PRO", "AUTO_ADOPTED")
+            is_ag = strat_str == "ANTIGRAVITY_V13_PRO"
 
             # 2. Check TP1 (Solo para Antigravity: cierra 30%)
             if is_ag and not t.tp1_filled and self._is_tp_hit(t, current_price, t.tp1_price):
@@ -70,11 +74,15 @@ class PositionManager:
                 trade_state_repo.update_trade(t.id, tp1_filled=1, remaining_size=rem)
                 await discord_notifier.log_tp1(t.symbol, current_price)
 
-            # 3. Check Profit Lock (Mover el SL nativo a entry + 15% ROE)
+            # Calculate profit lock levels dynamically (12% ROE at 10x leverage = 1.2% spot move)
+            roe_offset = t.entry_price * 0.012
+            profit_lock_sl = t.entry_price + roe_offset if side_str == "long" else t.entry_price - roe_offset
+
+            # 3. Check Profit Lock (Mover el SL nativo a entry + 12% ROE)
             if not t.profit_lock_active and self._is_tp_hit(t, current_price, t.profit_lock_price):
-                trade_state_repo.update_trade(t.id, profit_lock_active=1, sl_price=t.profit_lock_sl)
-                await self.execution_engine.modify_native_sl(t.symbol, t.side, t.profit_lock_sl)
-                await discord_notifier.log_profit_lock(t.symbol, t.profit_lock_sl)
+                trade_state_repo.update_trade(t.id, profit_lock_active=1, sl_price=profit_lock_sl)
+                await self.execution_engine.modify_native_sl(t.symbol, t.side, profit_lock_sl)
+                await discord_notifier.log_profit_lock(t.symbol, profit_lock_sl)
 
             # 4. Check TP2 & Trailing Activation
             if not t.trailing_active:
@@ -87,7 +95,7 @@ class PositionManager:
                         await discord_notifier.log_tp2(t.symbol, current_price)
                 else:
                     # SuperTrend/AUTO: activate trailing at 2.5 ATR without partials
-                    trail_trigger = t.entry_price + (t.atr * 2.5) if t.side == "long" else t.entry_price - (t.atr * 2.5)
+                    trail_trigger = t.entry_price + (t.atr * 2.5) if side_str == "long" else t.entry_price - (t.atr * 2.5)
                     if self._is_tp_hit(t, current_price, trail_trigger):
                         trade_state_repo.update_trade(t.id, trailing_active=1)
 
@@ -105,13 +113,15 @@ class PositionManager:
                     await discord_notifier.log_trailing(t.symbol, new_sl)
 
     def _is_sl_hit(self, t, price: float) -> bool:
-        if t.side == "long":
+        side_str = "long" if (t.side.value if hasattr(t.side, "value") else str(t.side)).lower() in ("long", "tradeside.long") else "short"
+        if side_str == "long":
             return price <= t.sl_price
         return price >= t.sl_price
 
     def _is_tp_hit(self, t, price: float, target: float) -> bool:
         if not target: return False
-        if t.side == "long":
+        side_str = "long" if (t.side.value if hasattr(t.side, "value") else str(t.side)).lower() in ("long", "tradeside.long") else "short"
+        if side_str == "long":
             return price >= target
         return price <= target
 
